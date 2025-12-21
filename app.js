@@ -20,6 +20,15 @@ function calculateDelay(chatId, replyText) {
     };
     return 180000 + Math.random() * 120000; // 3–5 phút
   }
+  
+// Xếp loại thân mật
+function getUserLevel(chatId) {
+  const count = userState[chatId]?.messageCount || 0;
+
+  if (count <= 5) return "stranger";
+  if (count <= 10) return "casual";
+  return "familiar";
+}
 
   userState[chatId].messageCount++;
 
@@ -45,7 +54,20 @@ app.post("/webhook", async (req, res) => {
   const chatId = message.chat.id;
   const text = message.text;
 
-  const replyText = `Mình nhận được rồi nè: ${text}`;
+  // Nội dung reply theo mức độ thân mật
+  const level = getUserLevel(chatId);
+
+let replyText;
+
+if (level === "stranger") {
+  replyText = "Hey, I saw your message. What can I help you with?";
+}
+else if (level === "casual") {
+  replyText = "Oh okay, I get what you mean 🙂";
+}
+else {
+  replyText = "Haha yeah 😄 I know what you’re talking about. Go on.";
+}
 
   // typing
   await fetch(
