@@ -12,6 +12,7 @@
   },
   "dependencies": {
   "express": "^5.0.0",
-  "node-fetch": "^2.6.7"
+  "node-fetch": "^2.6.7",
+  "openai": "^4.0.0"
   }
 }
