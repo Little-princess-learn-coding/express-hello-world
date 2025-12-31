@@ -1,4 +1,12 @@
+import express from "express";
 import fetch from "node-fetch";
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(express.json());
+
+// Call Grok
 async function callGrok(systemPrompt, contextPrompt, userMessage) {
   const response = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
@@ -9,18 +17,9 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
     body: JSON.stringify({
       model: "grok-2-latest",
       messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        {
-          role: "system",
-          content: contextPrompt
-        },
-        {
-          role: "user",
-          content: userMessage
-        }
+        { role: "system", content: systemPrompt },
+        { role: "system", content: contextPrompt },
+        { role: "user", content: userMessage }
       ],
       temperature: 0.95,
       max_tokens: 500
@@ -31,14 +30,39 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
   return data.choices[0].message.content;
 }
 
-  {
-    role: "user",
-    content: userMessage
-  }
-];
+// ================= USER STATE =================
+const users = {};
 
-const analysisPrompt = `
-You are analyzing a chat between Aurelia and a user.
+function getUser(chatId) {
+  if (!users[chatId]) {
+    users[chatId] = {
+      chatId,
+      state: "stranger", // stranger | casual | supporter_once | time_waster
+      relationship_level: 0,
+      message_count: 0,
+      last_sale_time: null,
+      failed_sale_count: 0,
+      conversationClosed: false,
+      created_at: Date.now(),
+      last_active: Date.now()
+    };
+  }
+  return users[chatId];
+}
+
+function updateUser(chatId, updates = {}) {
+  const user = getUser(chatId);
+  Object.assign(user, updates);
+  user.last_active = Date.now();
+  return user;
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// PHÂN LOẠI INTENT
+async function classifyIntent(userMessage, recentMessages = []) {
+  const prompt = `
+You are analyzing a chat message.
 
 User message:
 "${userMessage}"
@@ -46,78 +70,133 @@ User message:
 Recent context:
 ${recentMessages.join("\n")}
 
-Question:
-Is the user likely ending or pausing the conversation?
-Examples: going to sleep, being busy, saying goodbye, replying dryly, or clearly closing the chat.
+Classify the user's intent.
 
-Answer ONLY in JSON:
-{
-  "isEnding": true/false,
-  "reason": "short explanation"
-}
-`;
-
-const analysis = await callOpenAI(analysisPrompt);
-const { isEnding, reason } = JSON.parse(analysis);
-
-// Closing prompt
-const closingPrompt = `
-You are a girl named Aurelia.
-
-Tone:
-- cute
-- warm
-- slightly flirty
-- short or medium messages
-- friendly emojis
-
-Situation:
-The conversation is ending because: ${reason}
-
-Write a natural closing reply.
-Do NOT ask questions.
-Do NOT continue the conversation.
-Just reply and gently end it.
-`;
-userState[chatId].conversationClosed = true;
-
-// Tự động kết thúc hội thoại
-const shouldClosePrompt = `
-You are roleplaying a girl named Aurelia.
-
-Based on this conversation:
-${recentMessages.join("\n")}
-
-Should you gently end the conversation now like a real person would?
+Possible intents:
+- flirty
+- interested
+- supportive
+- neutral
+- bored
+- avoiding_sale
+- goodbye
 
 Answer ONLY JSON:
 {
-  "shouldEnd": true/false
+  "intent": "one_of_the_above",
+  "confidence": 0.0-1.0
 }
 `;
 
-const express = require("express");
-const fetch = require("node-fetch");
+  const result = await callGrok(
+    "You are a strict intent classifier.",
+    "",
+    prompt
+  );
 
-const app = express();
-const port = process.env.PORT || 3000;
-
-app.use(express.json());
-
-// trạng thái user
-const userState = {};
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-function getUserState(chatId) {
-  if (!userStates[chatId]) {
-    userStates[chatId] = {
-      stage: "intro",
-      messageCount: 0,
-      lastMessageAt: Date.now(),
-      isFirstContact: true,
-    };
+  try {
+    return JSON.parse(result);
+  } catch {
+    return { intent: "neutral", confidence: 0.5 };
   }
-  return userStates[chatId];
+}
+
+
+// ÁNH XẠ INTENT
+function applyIntentToUser(user, intent) {
+  switch (intent) {
+    case "flirty":
+      user.relationship_level += 2;
+      user.state = "casual";
+      break;
+
+    case "interested":
+      user.relationship_level += 1;
+      break;
+
+    case "supportive":
+      user.relationship_level += 2;
+      user.state = "supporter_once";
+      break;
+
+    case "bored":
+      user.relationship_level -= 1;
+      break;
+
+    case "avoiding_sale":
+      user.failed_sale_count += 1;
+      break;
+
+    case "goodbye":
+      user.conversationClosed = true;
+      break;
+
+    default:
+      break;
+  }
+
+  // clamp cho an toàn
+  user.relationship_level = Math.max(0, Math.min(10, user.relationship_level));
+}
+
+// ================= SALE DECISION LOGIC =================
+
+function canAttemptSale(user) {
+  const now = Date.now();
+
+  // chưa đủ thân
+  if (user.relationship_level < 5) return false;
+
+  // người lạ thì cấm bán
+  if (user.state === "stranger") return false;
+
+  // bị gắn mác time_waster
+  if (user.state === "time_waster") return false;
+
+  // cooldown sau khi bán
+  if (user.last_sale_time && now - user.last_sale_time < 6 * 60 * 60 * 1000)
+    return false;
+
+  // bán fail nhiều lần
+  if (user.failed_sale_count >= 2) return false;
+
+  return true;
+}
+
+function chooseSaleStrategy(user) {
+  // sale đầu
+  if (user.state === "casual") return "soft_support_hint";
+
+  // đã từng ủng hộ
+  if (user.state === "supporter_once") return "warm_return_offer";
+
+  // fallback
+  return null;
+}
+
+// Context prompt
+function buildContextPrompt(user) {
+  const saleAllowed = canAttemptSale(user);
+  const strategy = saleAllowed ? chooseSaleStrategy(user) : null;
+
+  return `
+USER STATE:
+- relationship_state: ${user.state}
+- relationship_level: ${user.relationship_level}
+- failed_sale_count: ${user.failed_sale_count}
+- last_sale_time: ${user.last_sale_time}
+
+SALE RULES:
+- Sale allowed: ${saleAllowed}
+- Sale strategy: ${strategy || "none"}
+
+${strategy ? SALE_STRATEGIES[strategy] : ""}
+
+IMPORTANT:
+- If Sale allowed is false, do NOT mention Ko-fi or selling.
+- If allowed, integrate naturally into conversation.
+- Never break character.
+`;
 }
 
 // Hàm delay
@@ -195,6 +274,28 @@ app.post("/webhook", async (req, res) => {
   );
   res.sendStatus(200);
 });
+
+  // detect if sale happened
+if (canAttemptSale(user)) {
+  const strategy = chooseSaleStrategy(user);
+  if (strategy) {
+    updateUser(chatId, {
+      last_sale_time: Date.now()
+    });
+  }
+}
+  // User respond to sale
+  updateUser(chatId, {
+  state: "supporter_once",
+  failed_sale_count: 0
+});
+  updateUser(chatId, {
+  failed_sale_count: user.failed_sale_count + 1
+});
+  updateUser(chatId, {
+  state: "time_waster"
+});
+
 
 // Hàm tách câu
 function splitIntoBursts(text) {
