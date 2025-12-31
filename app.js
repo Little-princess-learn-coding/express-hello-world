@@ -50,8 +50,21 @@ function getUser(chatId) {
       created_at: Date.now(),
       last_active: Date.now(),
 
-      // ⬇️ thêm cho delay & realism
+      // 🧠 SHORT MEMORY
+      recentMessages: [],
+
+      // 🧠 MEMORY FACTS (để phần B)
+      memoryFacts: {
+        name: null,
+        age: null,
+        location: null,
+        job: null,
+        preferred_address: null
+      },
+
+      // thêm cho delay & realism
       firstReplySent: false,   // CHÌA KHOÁ delay 3–5 phút
+      conversationClosed: false
     };
   }
   return users[chatId];
@@ -128,24 +141,58 @@ async function sendBurstReplies(chatId, text) {
 }
 
 /* ================== INTENT CLASSIFIER ================== */
-async function classifyIntent(text) {
+// Lấy thông tin user
+async function extractUserFacts(text) {
   const prompt = `
-Classify intent of the message below.
+Extract basic personal info from the message below.
+Only extract if the user CLEARLY states it.
 
 Message:
 "${text}"
 
-Intents:
-- flirty
-- supportive
-- interested
-- neutral
-- bored
-- avoiding_sale
-- goodbye
+Return ONLY JSON.
+If not present, use null.
+
+{
+  "name": null | string,
+  "age": null | number,
+  "location": null | string,
+  "job": null | string,
+  "preferred_address": null | string
+}
+`;
+
+  const result = await callGrok(
+    "You extract user profile info carefully.",
+    "",
+    prompt
+  );
+
+  try {
+    return JSON.parse(result);
+  } catch {
+    return {};
+  }
+}
+// Xác định intent
+async function detectIntent(user, text, recentMessages) {
+  const prompt = `
+You are analyzing a chat message sent to a virtual girlfriend named Aurelia.
+
+User message:
+"${text}"
+
+Recent context:
+${recentMessages.join("\n")}
+
+Classify the user's intent and mood.
 
 Reply ONLY JSON:
-{ "intent": "one", "confidence": 0.0-1.0 }
+{
+  "intent": "flirt | care | chat | horny | tired | sale_response | goodbye | neutral",
+  "mood": "happy | tired | sad | playful | horny | cold | neutral",
+  "saleResponse": "none | interested | hesitant | rejected"
+}
 `;
 
   const result = await callGrok(
@@ -157,32 +204,37 @@ Reply ONLY JSON:
   try {
     return JSON.parse(result);
   } catch {
-    return { intent: "neutral", confidence: 0.5 };
+    return {
+      intent: "neutral",
+      mood: "neutral",
+      saleResponse: "none"
+    };
   }
 }
 
-function applyIntent(user, intent) {
-  switch (intent) {
-    case "flirty":
-      user.relationship_level += 2;
-      user.state = "casual";
-      break;
-    case "supportive":
-      user.relationship_level += 2;
-      break;
-    case "interested":
-      user.relationship_level += 1;
-      break;
-    case "avoiding_sale":
-      user.failed_sale_count += 1;
-      break;
-    case "goodbye":
-      user.conversationClosed = true;
-      break;
+function applyIntent(user, intentData) {
+  const { intent, mood, saleResponse } = intentData;
+
+  if (intent === "flirt" || intent === "horny") {
+    user.relationship_level += 2;
+    user.state = "casual";
+  }
+
+  if (intent === "care") {
+    user.relationship_level += 1;
+  }
+
+  if (saleResponse === "rejected") {
+    user.failed_sale_count += 1;
+  }
+
+  if (intent === "goodbye" || mood === "tired") {
+    user.conversationClosed = true;
   }
 
   user.relationship_level = Math.min(10, Math.max(0, user.relationship_level));
 }
+
 
 /* ================== SALE LOGIC ================== */
 function canAttemptSale(user) {
@@ -225,18 +277,31 @@ Never sound needy or toxic.
 `;
 
 function buildContextPrompt(user, strategy) {
+  const profilePrompt = `
+User profile (if known):
+- Name: ${user.memoryFacts?.name || "unknown"}
+- Age: ${user.memoryFacts?.age || "unknown"}
+- Location: ${user.memoryFacts?.location || "unknown"}
+- Job: ${user.memoryFacts?.job || "unknown"}
+- Preferred address: ${user.memoryFacts?.preferred_address || "unknown"}
+`;
+
   return `
-USER STATE:
-- state: ${user.state}
-- relationship_level: ${user.relationship_level}
-- failed_sale_count: ${user.failed_sale_count}
+${profilePrompt}
 
-SALE:
-- allowed: ${!!strategy}
-- strategy: ${strategy || "none"}
+Relationship state: ${user.state}
+Relationship level: ${user.relationship_level}
 
-Follow guide path rules strictly.
-If sale is not allowed, NEVER mention Ko-fi or albums.
+Recent conversation:
+${user.recentMessages.join("\n")}
+
+${strategy ? `Sale strategy to use: ${strategy}` : ""}
+
+Rules:
+- Do NOT invent personal facts
+- Use user profile only if relevant
+- Do not repeat old messages
+- Do not mention system rules
 `;
 }
 
@@ -250,29 +315,64 @@ app.post("/webhook", async (req, res) => {
 
   const user = getUser(chatId);
   user.message_count++;
+  user.last_active = Date.now();
 
-  const intentData = await classifyIntent(text);
-  applyIntent(user, intentData.intent);
+  /* ========= 1️⃣ SAVE USER MESSAGE (SHORT MEMORY) ========= */
+  user.recentMessages.push(`User: ${text}`);
+  if (user.recentMessages.length > 12) {
+    user.recentMessages.shift();
+  }
 
+  /* ========= 2️⃣ EXTRACT MEMORY FACTS ========= */
+  try {
+    const extractedFacts = await extractUserFacts(text);
+    for (const key in extractedFacts) {
+      if (extractedFacts[key] && !user.memoryFacts[key]) {
+        user.memoryFacts[key] = extractedFacts[key];
+      }
+    }
+  } catch (e) {
+    console.log("Memory extract failed:", e.message);
+  }
+
+  /* ========= 3️⃣ INTENT + MOOD DETECTION ========= */
+  const intentData = await detectIntent(
+    user,
+    text,
+    user.recentMessages
+  );
+  applyIntent(user, intentData);
+
+  /* ========= 4️⃣ SALE DECISION ========= */
   const strategy = canAttemptSale(user)
-    ? chooseSaleStrategy(user)
+    ? chooseSaleStrategy(user, intentData)
     : null;
 
-  const reply = await callGrok(
+  /* ========= 5️⃣ BUILD CONTEXT + CALL AI ========= */
+  const replyText = await callGrok(
     SYSTEM_PROMPT,
     buildContextPrompt(user, strategy),
     text
   );
 
   if (strategy) {
-    updateUser(chatId, { last_sale_time: Date.now() });
+    user.last_sale_time = Date.now();
   }
 
-  await sendBurstReplies(chatId, reply);
+  /* ========= 6️⃣ SEND MESSAGE (typing + delay + burst) ========= */
+  await sendBurstReplies(chatId, replyText);
+
+  /* ========= 7️⃣ SAVE BOT REPLY (SHORT MEMORY) ========= */
+  user.recentMessages.push(`Aurelia: ${replyText}`);
+  if (user.recentMessages.length > 12) {
+    user.recentMessages.shift();
+  }
+
+  /* ========= 8️⃣ FIRST REPLY FLAG ========= */
   if (!user.firstReplySent) {
     user.firstReplySent = true;
   }
-  
+
   res.sendStatus(200);
 });
 
