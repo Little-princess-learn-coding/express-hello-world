@@ -193,7 +193,7 @@ Reply ONLY JSON:
 {
   "intent": "flirt | care | chat | horny | tired | sale_response | goodbye | neutral",
   "mood": "happy | tired | sad | playful | horny | cold | neutral",
-  "saleResponse": "none | interested | hesitant | rejected"
+  "saleResponse": "none | interested | hesitant | price_hesitation | rejected"
 }
 `;
 
