@@ -31,6 +31,9 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
 
 /* ================== USER STATE ================== */
 const users = {};
+// user.mode
+// "normal" | "playful" | "special"
+mode: "normal",
 
 function getUser(chatId) {
   if (!users[chatId]) {
@@ -237,31 +240,87 @@ function applyIntent(user, intentData) {
   user.relationship_level = Math.min(10, Math.max(0, user.relationship_level));
 }
 
+function canAttemptSale(user) {}
+function chooseSaleStrategy(user) {}
+function detectSaleSuccess(text) {
+  return /bought|supported|just paid|done/i.test(text);
+}
 
 /* ================== SALE LOGIC ================== */
 function canAttemptSale(user) {
-  if (user.state === "stranger") return false;
-  if (user.state === "time_waster") return false;
-  if (user.relationship_level < 5) return false;
+  const now = Date.now();
 
-  if (
-    user.last_sale_time &&
-    Date.now() - user.last_sale_time < 6 * 60 * 60 * 1000
-  )
-    return false;
-
-  if (user.failed_sale_count >= 3) {
-    user.state = "time_waster";
-    return false;
+  // hard block
+  if (user.state === "stranger") {
+    return { allow: false, reason: "stranger" };
   }
 
-  return true;
+  if (user.state === "time_waster") {
+    return { allow: false, reason: "time_waster" };
+  }
+
+  // failed too many times → mark time waster
+  if (user.failed_sale_count >= 3) {
+    user.state = "time_waster";
+    return { allow: false, reason: "too_many_failed_sales" };
+  }
+
+  // relationship too low
+  if (user.relationship_level < 5) {
+    return { allow: false, reason: "relationship_low" };
+  }
+
+  // reset weekly counter
+  if (!user.weekly_reset_at || now - user.weekly_reset_at > 7 * 24 * 60 * 60 * 1000) {
+    user.weekly_sale_count = 0;
+    user.weekly_reset_at = now;
+  }
+
+  // weekly limit
+  if (user.weekly_sale_count >= 3) {
+    const history = (user.recentMessages || []).join(" ");
+    if (!/photo|album|pic|see more|show me/i.test(history)) {
+      return { allow: false, reason: "weekly_limit" };
+    }
+  }
+
+  // cooldown between sales
+  if (
+    user.last_sale_time &&
+    now - user.last_sale_time < 48 * 60 * 60 * 1000
+  ) {
+    return { allow: false, reason: "cooldown" };
+  }
+
+  return { allow: true };
 }
 
 function chooseSaleStrategy(user) {
   if (user.state === "casual") return "sale_second_or_more";
   if (user.state === "supporter_once") return "return_support";
   return null;
+}
+
+function decideModel(user, intentData) {
+  // special mode: user rất flirty + relationship cao
+  if (
+    intentData.intent === "flirty" &&
+    intentData.confidence > 0.75 &&
+    user.relationship_level >= 6
+  ) {
+    return "grok";
+  }
+
+  // playful mode nhẹ
+  if (
+    intentData.intent === "flirty" &&
+    user.relationship_level >= 4
+  ) {
+    return "grok";
+  }
+
+  // default
+  return "openai";
 }
 
 /* ================== PROMPT ================== */
@@ -331,6 +390,48 @@ Rules:
 `;
 }
 
+function buildOpenAIPrompt(user, strategy) {
+  return `
+You are Aurelia.
+
+Style:
+- warm, smart, funny, cute
+- emotionally attentive
+- natural like a real girl
+- subtle charm, never aggressive
+
+Memory facts:
+${formatUserFacts(user)}
+
+Conversation history:
+${user.recentMessages.join("\n")}
+
+Sale strategy:
+${strategy || "none"}
+
+Rules:
+- Never push sale aggressively
+- Focus on connection first
+`;
+}
+
+function buildGrokPrompt(user) {
+  return `
+You are Aurelia in playful mode.
+
+Style:
+- teasing
+- cheeky
+- short replies
+- emoji allowed
+
+Rules:
+- No long explanations
+- No sales
+- Keep it light and fun
+`;
+}
+
 /* ================== TELEGRAM WEBHOOK ================== */
 app.post("/webhook", async (req, res) => {
   const msg = req.body.message;
@@ -340,13 +441,26 @@ app.post("/webhook", async (req, res) => {
   const text = msg.text;
 
   const user = getUser(chatId);
+  user.message_count++;
+  user.last_active = Date.now();
+  
   // reset weekly sale count mỗi 7 ngày
   if (Date.now() - user.weekly_reset_at > 7 * 24 * 60 * 60 * 1000) {
   user.weekly_sale_count = 0;
   user.weekly_reset_at = Date.now();
 }
-  user.message_count++;
-  user.last_active = Date.now();
+
+  // KIỂM TRA SALE THÀNH CÔNG — ĐẶT Ở ĐÂY
+  if (detectSaleSuccess(text)) {
+    user.state = "supporter_once";
+    user.failed_sale_count = 0;
+    user.weekly_sale_count += 1;
+    user.last_sale_time = Date.now();
+    user.relationship_level = Math.min(
+      10,
+      user.relationship_level + 2
+    );
+  }
 
   /* ========= 1️⃣ SAVE USER MESSAGE (SHORT MEMORY) ========= */
   user.recentMessages.push(`User: ${text}`);
@@ -375,9 +489,11 @@ app.post("/webhook", async (req, res) => {
   applyIntent(user, intentData);
 
   /* ========= 4️⃣ SALE DECISION ========= */
-  const strategy = canAttemptSale(user)
-    ? chooseSaleStrategy(user, intentData)
-    : null;
+  const saleDecision = canAttemptSale(user);
+  let strategy = null;
+  if (saleDecision.allow) {
+    strategy = chooseSaleStrategy(user, intentData);
+  }
 
   /* ========= 5️⃣ BUILD CONTEXT + CALL AI ========= */
   const replyText = await callGrok(
