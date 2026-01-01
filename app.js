@@ -44,6 +44,8 @@ function getUser(chatId) {
       // sale tracking
       failed_sale_count: 0,
       last_sale_time: null,
+      weekly_sale_count: 0,
+      weekly_reset_at: Date.now(),
 
       // activity
       message_count: 0,
@@ -271,9 +273,33 @@ Personality:
 - caring
 - teasing
 - confident
-- minimal emoji (🥰💕😈🥺^^ only when needed)
+- minimal emoji (🥰💕😈🥺^^(╥﹏╥) only when needed)
 Never say "hey".
 Never sound needy or toxic.
+Sales philosophy:
+- Never push money directly
+- Gifts feel like affection
+- User is choosing to spoil you, not paying you
+
+${GIFT_REFERENCE}
+`;
+
+const GIFT_REFERENCE = `
+Gift pricing reference (rough, flexible):
+- milk tea / coffee: $3–6
+- meal / snack: $5–12
+- manicure / nails: $15–30
+- makeup item: $20–40
+- cosplay accessory: $30–60
+- casual bag: $40–80
+- handbag / fashion bag: $80–150
+- cosplay costume (full): $120–300
+- photo album (digital): $10–25
+- special album / exclusive set: $30–60
+
+Rules:
+- Prefer ranges or “around”
+- Price should feel reasonable, not greedy
 `;
 
 function buildContextPrompt(user, strategy) {
@@ -314,6 +340,11 @@ app.post("/webhook", async (req, res) => {
   const text = msg.text;
 
   const user = getUser(chatId);
+  // reset weekly sale count mỗi 7 ngày
+  if (Date.now() - user.weekly_reset_at > 7 * 24 * 60 * 60 * 1000) {
+  user.weekly_sale_count = 0;
+  user.weekly_reset_at = Date.now();
+}
   user.message_count++;
   user.last_active = Date.now();
 
