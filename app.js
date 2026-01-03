@@ -29,6 +29,34 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
   return data.choices[0].message.content;
 }
 
+/* ================== OPENAI CALL ================== */
+async function callOpenAI(systemPrompt, userMessage) {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      temperature: 0.7,
+      max_tokens: 500,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!data.choices || !data.choices[0]) {
+    throw new Error("OpenAI API returned no choices");
+  }
+
+  return data.choices[0].message.content;
+}
+
 /* ================== USER STATE ================== */
 const users = {};
 
