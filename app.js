@@ -64,7 +64,6 @@ function getUser(chatId) {
   if (!users[chatId]) {
     users[chatId] = {
       chatId,
-      mode: "normal", // normal | playful | spicy
 
       // state machine
       state: "stranger", // stranger | casual | supporter_once | time_waster
@@ -110,9 +109,6 @@ function updateUser(chatId, updates) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function calculateDelay(user, replyText) {
-  const user = userState[chatId];
-  const now = Date.now();
-
   // Stranger – reply đầu tiên rất chậm
   if (!user.firstReplySent && user.state === "stranger") {
     return 180000 + Math.random() * 120000; // 3–5 phút
@@ -182,7 +178,7 @@ function splitIntoBursts(text) {
     .filter(Boolean);
 }
 
-async function sendBurstReplies(chatId, text) {
+async function sendBurstReplies(user, chatId, text) {
   const parts = splitIntoBursts(text);
 
   for (let i = 0; i < parts.length; i++) {
@@ -295,6 +291,10 @@ function applyIntent(user, intentData) {
 
   if (intent === "goodbye" || mood === "tired") {
     user.conversationClosed = true;
+    if (user.conversationClosed) {
+  return res.sendStatus(200);
+}
+
   }
 
   user.relationship_level = Math.min(10, Math.max(0, user.relationship_level));
@@ -361,16 +361,6 @@ function chooseSaleStrategy(user) {
 
 // DECIDE MODEL
 function decideModel(user, intentData) {
-  // special mode: user rất flirty + relationship cao
-  if (
-    intentData.intent === "flirt" &&
-    intentData.confidence > 0.75 &&
-    user.relationship_level >= 6
-  ) {
-    return "grok";
-  }
-
-  // playful mode nhẹ
   if (
     intentData.intent === "flirt" &&
     user.relationship_level >= 4
@@ -378,7 +368,10 @@ function decideModel(user, intentData) {
     return "grok";
   }
 
-  // default
+  if (intentData.intent === "horny") {
+    return "grok";
+  }
+
   return "openai";
 }
 
@@ -481,11 +474,10 @@ You are Aurelia in playful mode.
 Style:
 - teasing
 - cheeky
-- short replies
+- flirty replies
 - emoji allowed
 
 Rules:
-- No long explanations
 - No sales
 - Keep it light and fun
 `;
@@ -565,14 +557,14 @@ if (modelChoice === "openai") {
   );
 } else {
   replyText = await callGrok(
-    SYSTEM_PROMPT,
-    buildContextPrompt(user, strategy),
+    buildGrokPrompt(user),          // 👈 PROMPT RIÊNG CHO GROK
+    buildContextPrompt(user, null), // 👈 KHÔNG SALE, KHÔNG GUIDE
     text
   );
 }
 
   /* ========= 6️⃣ SEND MESSAGE (typing + delay + burst) ========= */
-  await sendBurstReplies(chatId, replyText);
+  await sendBurstReplies(user, chatId, replyText);
 
   /* ========= 7️⃣ SAVE BOT REPLY (SHORT MEMORY) ========= */
   user.recentMessages.push(`Aurelia: ${replyText}`);
