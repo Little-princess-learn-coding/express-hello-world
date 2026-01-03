@@ -101,8 +101,9 @@ function getUser(chatId) {
 }
 
 function updateUser(chatId, updates) {
-  Object.assign(users[chatId], updates);
-  users[chatId].last_active = Date.now();
+  const user = getUser(chatId); // đảm bảo tồn tại
+  Object.assign(user, updates);
+  user.last_active = Date.now();
 }
 
 /* ================== UTILS ================== */
@@ -274,30 +275,31 @@ Reply ONLY JSON:
 }
 
 function applyIntent(user, intentData) {
-  const { intent, mood, saleResponse } = intentData;
+  const updates = {};
 
-  if (intent === "flirt" || intent === "horny") {
-    user.relationship_level += 2;
-    user.state = "casual";
+  if (intentData.intent === "flirt" || intentData.intent === "horny") {
+    updates.relationship_level = Math.min(user.relationship_level + 2, 10);
+    updates.state = "casual";
   }
 
-  if (intent === "care") {
-    user.relationship_level += 1;
+  if (intentData.intent === "care") {
+    updates.relationship_level = Math.min(user.relationship_level + 1, 10);
   }
 
-  if (saleResponse === "rejected") {
-    user.failed_sale_count += 1;
+  if (intentData.saleResponse === "rejected") {
+    updates.failed_sale_count = user.failed_sale_count + 1;
   }
 
-  if (intent === "goodbye" || mood === "tired") {
-    user.conversationClosed = true;
-    if (user.conversationClosed) {
-  return res.sendStatus(200);
-}
-
+  if (
+    intentData.intent === "goodbye" ||
+    intentData.mood === "tired"
+  ) {
+    updates.conversationClosed = true;
   }
 
-  user.relationship_level = Math.min(10, Math.max(0, user.relationship_level));
+  if (Object.keys(updates).length > 0) {
+    updateUser(user.chatId, updates);
+  }
 }
 
 function detectSaleSuccess(text) {
@@ -520,16 +522,34 @@ app.post("/webhook", async (req, res) => {
   }
 
   /* ========= 2️⃣ EXTRACT MEMORY FACTS ========= */
-  try {
-    const extractedFacts = await extractUserFacts(text);
+try {
+  const extractedFacts = await extractUserFacts(text);
+
+  if (extractedFacts && Object.keys(extractedFacts).length > 0) {
+    const newFacts = {};
+
     for (const key in extractedFacts) {
-      if (extractedFacts[key] && !user.memoryFacts[key]) {
-        user.memoryFacts[key] = extractedFacts[key];
+      if (
+        extractedFacts[key] &&
+        !user.memoryFacts[key]
+      ) {
+        newFacts[key] = extractedFacts[key];
       }
     }
-  } catch (e) {
-    console.log("Memory extract failed:", e.message);
+
+    if (Object.keys(newFacts).length > 0) {
+      updateUser(user.chatId, {
+        memoryFacts: {
+          ...user.memoryFacts,
+          ...newFacts,
+        },
+      });
+    }
   }
+} catch (e) {
+  console.log("Memory extract failed:", e.message);
+}
+
 
   /* ========= 3️⃣ INTENT + MOOD DETECTION ========= */
   const intentData = await detectIntent(
