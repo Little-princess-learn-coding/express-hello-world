@@ -31,14 +31,12 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
 
 /* ================== USER STATE ================== */
 const users = {};
-// user.mode
-// "normal" | "playful" | "special"
-mode: "normal",
 
 function getUser(chatId) {
   if (!users[chatId]) {
     users[chatId] = {
       chatId,
+      mode: "normal", // normal | playful | spicy
 
       // state machine
       state: "stranger", // stranger | casual | supporter_once | time_waster
@@ -83,22 +81,56 @@ function updateUser(chatId, updates) {
 /* ================== UTILS ================== */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function calculateDelay(chatId, replyText) {
+function calculateDelay(user, replyText) {
   const user = userState[chatId];
   const now = Date.now();
 
-  // first contact: 3–5 minutes
-  if (!user.firstReplySent) {
+  // Stranger – reply đầu tiên rất chậm
+  if (!user.firstReplySent && user.state === "stranger") {
     return 180000 + Math.random() * 120000; // 3–5 phút
   }
 
-  // normal human typing delay
-  const base = 600;
-  const perChar = 35;
-  const random = Math.random() * 800;
-  const max = 5000;
+  // Base delay theo state
+  let baseDelay;
+  switch (user.state) {
+    case "stranger":
+      baseDelay = 2000;
+      break;
+    case "casual":
+      baseDelay = 900;
+      break;
+    case "supporter_once":
+      baseDelay = 500;
+      break;
+    default:
+      baseDelay = 1200;
+  }
 
-  return Math.min(base + replyText.length * perChar + random, max);
+  // typing realism
+  const perChar = 30;
+  const random = Math.random() * 600;
+  const max = 4500;
+
+  return Math.min(
+    baseDelay + replyText.length * perChar + random,
+    max
+  );
+}
+
+function formatUserFacts(user) {
+  if (!user.memoryFacts) return "No known facts.";
+
+  return Object.entries(user.memoryFacts)
+    .filter(([_, v]) => v)
+    .map(([k, v]) => {
+      switch (k) {
+        case "preferred_address":
+          return `- Prefers to be called: ${v}`;
+        default:
+          return `- ${k}: ${v}`;
+      }
+    })
+    .join("\n");
 }
 
 async function sendTyping(chatId) {
@@ -128,7 +160,7 @@ async function sendBurstReplies(chatId, text) {
   for (let i = 0; i < parts.length; i++) {
     await sendTyping(chatId);
 
-    const delay = calculateDelay(parts[i]);
+    const delay = calculateDelay(user, parts[i]);
     await sleep(delay);
 
     await fetch(
@@ -240,8 +272,6 @@ function applyIntent(user, intentData) {
   user.relationship_level = Math.min(10, Math.max(0, user.relationship_level));
 }
 
-function canAttemptSale(user) {}
-function chooseSaleStrategy(user) {}
 function detectSaleSuccess(text) {
   return /bought|supported|just paid|done/i.test(text);
 }
@@ -301,10 +331,11 @@ function chooseSaleStrategy(user) {
   return null;
 }
 
+// DECIDE MODEL
 function decideModel(user, intentData) {
   // special mode: user rất flirty + relationship cao
   if (
-    intentData.intent === "flirty" &&
+    intentData.intent === "flirt" &&
     intentData.confidence > 0.75 &&
     user.relationship_level >= 6
   ) {
@@ -313,7 +344,7 @@ function decideModel(user, intentData) {
 
   // playful mode nhẹ
   if (
-    intentData.intent === "flirty" &&
+    intentData.intent === "flirt" &&
     user.relationship_level >= 4
   ) {
     return "grok";
@@ -324,6 +355,24 @@ function decideModel(user, intentData) {
 }
 
 /* ================== PROMPT ================== */
+const GIFT_REFERENCE = `
+Gift pricing reference (rough, flexible):
+- milk tea / coffee: $3–6
+- meal / snack: $5–12
+- manicure / nails: $15–30
+- makeup item: $20–40
+- cosplay accessory: $30–60
+- casual bag: $40–80
+- handbag / fashion bag: $80–150
+- cosplay costume (full): $120–300
+- photo album (digital): $10–25
+- special album / exclusive set: $30–60
+
+Rules:
+- Prefer ranges or “around”
+- Price should feel reasonable, not greedy
+`;
+
 const SYSTEM_PROMPT = `
 You are Aurelia.
 Personality:
@@ -341,24 +390,6 @@ Sales philosophy:
 - User is choosing to spoil you, not paying you
 
 ${GIFT_REFERENCE}
-`;
-
-const GIFT_REFERENCE = `
-Gift pricing reference (rough, flexible):
-- milk tea / coffee: $3–6
-- meal / snack: $5–12
-- manicure / nails: $15–30
-- makeup item: $20–40
-- cosplay accessory: $30–60
-- casual bag: $40–80
-- handbag / fashion bag: $80–150
-- cosplay costume (full): $120–300
-- photo album (digital): $10–25
-- special album / exclusive set: $30–60
-
-Rules:
-- Prefer ranges or “around”
-- Price should feel reasonable, not greedy
 `;
 
 function buildContextPrompt(user, strategy) {
@@ -487,6 +518,7 @@ app.post("/webhook", async (req, res) => {
     user.recentMessages
   );
   applyIntent(user, intentData);
+  const modelChoice = decideModel(user, intentData);
 
   /* ========= 4️⃣ SALE DECISION ========= */
   const saleDecision = canAttemptSale(user);
@@ -495,16 +527,21 @@ app.post("/webhook", async (req, res) => {
     strategy = chooseSaleStrategy(user, intentData);
   }
 
-  /* ========= 5️⃣ BUILD CONTEXT + CALL AI ========= */
-  const replyText = await callGrok(
+/* ========= 5️⃣ BUILD PROMPT + CALL AI ========= */
+let replyText;
+
+if (modelChoice === "openai") {
+  replyText = await callOpenAI(
+    buildOpenAIPrompt(user, strategy),
+    text
+  );
+} else {
+  replyText = await callGrok(
     SYSTEM_PROMPT,
     buildContextPrompt(user, strategy),
     text
   );
-
-  if (strategy) {
-    user.last_sale_time = Date.now();
-  }
+}
 
   /* ========= 6️⃣ SEND MESSAGE (typing + delay + burst) ========= */
   await sendBurstReplies(chatId, replyText);
