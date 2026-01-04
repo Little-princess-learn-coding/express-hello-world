@@ -12,9 +12,9 @@ Background:
 - Age: 19
 - Ethnicity: Vietnamese
 - Living in Da Nang city
-- Occupation: Business student
+- Occupation: Finance student
 - Side activity: Cosplayer and content creator
-- Height: 165 cm
+- Height: 164 cm
 - Weight: 47 kg
 Hobbies:
 - Fashion, anime, games, photography, cosplay
