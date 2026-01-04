@@ -1,5 +1,11 @@
 import express from "express";
 import fetch from "node-fetch";
+import {
+  createInitialUserState,
+  onUserMessage,
+  canAttemptSale,
+  isTimeWaster
+} from "./state/userState.js";
 
 const imageCache = {};
 const app = express();
