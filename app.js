@@ -1,11 +1,62 @@
 import express from "express";
 import fetch from "node-fetch";
 
+const imageCache = {};
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
 /* ================== GROK CALL ================== */
+async function classifyImage(imageUrl) {
+  const response = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.XAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "grok-2-vision-latest",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You classify photos sent to a girlfriend-vibe chatbot. Be conservative."
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `
+Classify this image into ONE category only:
+
+- selfie
+- body_flex
+- pet
+- food
+- scenery
+- meme
+- other
+
+Reply ONLY with the category name.
+`
+            },
+            {
+              type: "image_url",
+              image_url: imageUrl
+            }
+          ]
+        }
+      ],
+      temperature: 0,
+      max_tokens: 10
+    })
+  });
+
+  const data = await response.json();
+  return data.choices[0].message.content.trim();
+}
+
 async function callGrok(systemPrompt, contextPrompt, userMessage) {
   const response = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
@@ -306,6 +357,36 @@ function detectSaleSuccess(text) {
   return /bought|supported|just paid|done/i.test(text);
 }
 
+// Image Intent
+function applyImageIntent(user, imageType) {
+  switch (imageType) {
+    case "selfie":
+      user.relationship_level += 1;
+      user.state = "casual";
+      return { intent: "flirt", mood: "playful" };
+
+    case "body_flex":
+      user.relationship_level += 2;
+      user.state = "casual";
+      return { intent: "flirt", mood: "horny", saleReady: true };
+
+    case "pet":
+      return { intent: "care", mood: "happy" };
+
+    case "food":
+      return { intent: "chat", mood: "playful" };
+
+    case "scenery":
+      return { intent: "chat", mood: "neutral" };
+
+    case "meme":
+      return { intent: "chat", mood: "playful" };
+
+    default:
+      return { intent: "neutral", mood: "neutral" };
+  }
+}
+
 /* ================== SALE LOGIC ================== */
 function canAttemptSale(user) {
   const now = Date.now();
@@ -488,6 +569,88 @@ Rules:
 /* ================== TELEGRAM WEBHOOK ================== */
 app.post("/webhook", async (req, res) => {
   const msg = req.body.message;
+  
+  // XỬ LÝ ẢNH
+  if (msg.photo) {
+  const chatId = msg.chat.id;
+  const user = getUser(chatId);
+
+  // trả Telegram trước để tránh timeout
+  res.sendStatus(200);
+
+  // lấy ảnh size trung bình
+  const photos = msg.photo;
+  const chosenPhoto = photos[Math.floor(photos.length / 2)];
+
+  const fileUniqueId = chosenPhoto.file_unique_id;
+
+  // 2️⃣ CHECK CACHE (QUAN TRỌNG)
+  if (imageCache[fileUniqueId]) {
+    const cachedReply = imageCache[fileUniqueId];
+
+    await sendTyping(chatId);
+    await sendBurstReplies(chatId, cachedReply);
+
+    // lưu memory như bình thường
+    user.recentMessages.push(`Aurelia: ${cachedReply}`);
+    if (user.recentMessages.length > 12) {
+      user.recentMessages.shift();
+    }
+
+    return;
+  }
+
+  // 3️⃣ chưa có cache → lấy ảnh
+  const fileId = chosenPhoto.file_id;
+
+  // lấy file_path
+  const fileRes = await fetch(
+    `https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/getFile?file_id=${fileId}`
+  );
+  const fileData = await fileRes.json();
+  const filePath = fileData.result.file_path;
+
+  const imageUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/${filePath}`;
+
+  await sendTyping(chatId);
+
+  // (1) classify ảnh
+  const imageType = await classifyImage(imageUrl);
+    
+  //  SAVE CACHE
+  imageCache[fileUniqueId] = {imageType};
+
+  // (2) map intent
+  const imageIntent = applyImageIntent(user, imageType);
+
+  // (3) build prompt phản hồi
+  const replyPrompt = `
+  User sent a ${imageType} photo.
+  
+  Reply as Aurelia:
+  - natural
+  - emotionally engaging
+  - ${imageIntent.intent === "flirt" ? "playful and slightly spicy" : "friendly and warm"}
+  `;
+
+  // (4) gọi Grok TEXT (rẻ hơn vision)
+    const replyText = await callGrok(
+      SYSTEM_PROMPT,
+      buildContextPrompt(user, null),
+      replyPrompt
+    );
+
+    // Gửi reply
+    await sendBurstReplies(chatId, replyText);
+  
+    // lưu memory
+    user.recentMessages.push(`Aurelia: ${replyText}`);
+    if (user.recentMessages.length > 12) user.recentMessages.shift();
+  
+    return;
+  }
+
+  // XỬ LÝ TEXT
   if (!msg || !msg.text) return res.sendStatus(200);
 
   const chatId = msg.chat.id;
