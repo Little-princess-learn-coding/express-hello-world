@@ -28,8 +28,8 @@ async function classifyImage(imageUrl) {
             {
               type: "text",
               text: `
-Classify this image into ONE category only:
 
+Classify this image into ONE category only:
 - selfie
 - body_flex
 - pet
@@ -117,7 +117,7 @@ function getUser(chatId) {
       chatId,
 
       // state machine
-      state: "stranger", // stranger | casual | supporter_once | time_waster
+      state: "stranger", // stranger | casual | supporter | time_waster
       relationship_level: 0,
 
       // sale tracking
@@ -175,7 +175,7 @@ function calculateDelay(user, replyText) {
     case "casual":
       baseDelay = 900;
       break;
-    case "supporter_once":
+    case "supporter":
       baseDelay = 500;
       break;
     default:
@@ -438,7 +438,7 @@ function canAttemptSale(user) {
 
 function chooseSaleStrategy(user) {
   if (user.state === "casual") return "sale_second_or_more";
-  if (user.state === "supporter_once") return "return_support";
+  if (user.state === "supporter") return "return_support";
   return null;
 }
 
@@ -668,7 +668,7 @@ app.post("/webhook", async (req, res) => {
 
   // KIỂM TRA SALE THÀNH CÔNG — ĐẶT Ở ĐÂY
   if (detectSaleSuccess(text)) {
-    user.state = "supporter_once";
+    user.state = "supporter";
     user.failed_sale_count = 0;
     user.weekly_sale_count += 1;
     user.last_sale_time = Date.now();
