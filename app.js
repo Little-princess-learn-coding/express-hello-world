@@ -581,6 +581,15 @@ app.post("/webhook", async (req, res) => {
   if (msg.photo) {
   const chatId = msg.chat.id;
   const user = getUser(chatId);
+  
+  // ✅ UPDATE USER STATE (ảnh cũng là interaction)
+  onUserMessage(user.state);
+  
+  // ❌ CHẶN TIME-WASTER SỚM
+  if (isTimeWaster(user.state)) {
+    res.sendStatus(200);
+    return;
+  }
 
   // trả Telegram trước để tránh timeout
   res.sendStatus(200);
@@ -664,6 +673,13 @@ app.post("/webhook", async (req, res) => {
   const text = msg.text;
 
   const user = getUser(chatId);
+  // ✅ update state machine
+  onUserMessage(user.state);
+  
+  // ❌ chặn time-waster
+  if (isTimeWaster(user.state)) {
+    return res.sendStatus(200);
+  }
   user.message_count++;
   user.last_active = Date.now();
   
@@ -675,14 +691,11 @@ app.post("/webhook", async (req, res) => {
 
   // KIỂM TRA SALE THÀNH CÔNG — ĐẶT Ở ĐÂY
   if (detectSaleSuccess(text)) {
-    user.state = "supporter";
+    onSaleSuccess(user.state);
     user.failed_sale_count = 0;
     user.weekly_sale_count += 1;
     user.last_sale_time = Date.now();
-    user.relationship_level = Math.min(
-      10,
-      user.relationship_level + 2
-    );
+    user.relationship_level = Math.min(10, user.relationship_level + 2);
   }
 
   /* ========= 1️⃣ SAVE USER MESSAGE (SHORT MEMORY) ========= */
