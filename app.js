@@ -115,6 +115,7 @@ async function callOpenAI(systemPrompt, userMessage) {
 }
 
 /* ================== USER STATE ================== */
+import { createInitialUserState } from "./state/userState.js";
 const users = {};
 
 function getUser(chatId) {
@@ -122,8 +123,8 @@ function getUser(chatId) {
     users[chatId] = {
       chatId,
 
-      // state machine
-      state: "stranger", // stranger | casual | supporter | time_waster
+       // ✅ STATE MACHINE LÕI (đến từ userState.js)
+      state: createInitialUserState(),
       relationship_level: 0,
 
       // sale tracking
