@@ -8,6 +8,7 @@ import
   isTimeWaster
 } 
   from "./state/userState.js";
+import STAGE_5A_PROMPT from "./prompts/stage5A.content.js";
 
 const imageCache = {};
 const app = express();
@@ -339,6 +340,9 @@ Reply ONLY JSON:
 
 function detectAskForPhotos(text) {
   return /(see.*photo|see.*pic|your photo|your pics|show me|can i see|your cosplay)/i.test(text);
+}
+function detectEmotionalSupport(text) {
+  return /(yes|of course|i would|sure|i['’]ll be your fan|i support you)/i.test(text);
 }
 
 function applyIntent(user, intentData) {
@@ -699,6 +703,14 @@ app.post("/webhook", async (req, res) => {
   if (user.recentMessages.length > 12) {
     user.recentMessages.shift();
   }
+  
+  /* ========= EMOTIONAL SUPPORT CHECK (STAGE 4 DONE) ========= */
+  if (
+    user.state === "casual" &&
+    detectEmotionalSupport(text)
+  ) {
+    user.emotional_ready = true;
+  }
 
   /* ========= 2️⃣ EXTRACT MEMORY FACTS ========= */
 try {
@@ -764,14 +776,16 @@ try {
   /* ========= 4️⃣ SALE DECISION ========= */
   let strategy = null;
   
-  // tầng 1: check theo STATE MACHINE (stranger / casual / supporter / time_waster)
-  const allowByState = canAttemptSale(user.state);
-  
-  if (allowByState) {
-    // tầng 2: check theo SALE POLICY (cooldown, weekly limit, relationship_level)
-    const policyDecision = canAttemptSaleByPolicy(user);
-  
-    if (policyDecision.allow) {
+  if (
+    user.emotional_ready &&
+    !user.has_asked_support
+  ) {
+    strategy = "first_sale_locked";
+  }
+  // REPEAT SALE (after first support)
+  else if (user.has_asked_support) {
+    const saleDecision = canAttemptSale(user);
+    if (saleDecision.allow) {
       strategy = chooseSaleStrategy(user, intentData);
     }
   }
