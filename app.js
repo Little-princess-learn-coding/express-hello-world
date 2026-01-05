@@ -153,7 +153,11 @@ function getUser(chatId) {
 
       // thêm cho delay & realism
       firstReplySent: false,   // CHÌA KHOÁ delay 3–5 phút
-      conversationClosed: false
+      conversationClosed: false,
+
+      has_seen_content: false,
+      emotional_ready: false,
+      has_asked_support: false,
     };
   }
   return users[chatId];
@@ -331,6 +335,10 @@ Reply ONLY JSON:
       saleResponse: "none"
     };
   }
+}
+
+function detectAskForPhotos(text) {
+  return /(see.*photo|see.*pic|your photo|your pics|show me|can i see|your cosplay)/i.test(text);
 }
 
 function applyIntent(user, intentData) {
@@ -729,6 +737,29 @@ try {
   );
   applyIntent(user, intentData);
   const modelChoice = decideModel(user, intentData);
+
+    /* ========= FAST CONTENT ACCESS (STAGE 5A) ========= */
+  if (
+    detectAskForPhotos(text) &&
+    !user.has_seen_content
+  ) {
+    const replyText = await callGrok(
+      SYSTEM_PROMPT,
+      buildContextPrompt(user, null),
+      STAGE_5A_PROMPT // bạn sẽ tạo ở bước 4
+    );
+  
+    user.has_seen_content = true;
+  
+    await sendBurstReplies(chatId, replyText);
+  
+    user.recentMessages.push(`Aurelia: ${replyText}`);
+    if (user.recentMessages.length > 12) {
+      user.recentMessages.shift();
+    }
+  
+    return; // ⛔ RẤT QUAN TRỌNG: dừng flow tại đây
+  }
 
   /* ========= 4️⃣ SALE DECISION ========= */
   let strategy = null;
