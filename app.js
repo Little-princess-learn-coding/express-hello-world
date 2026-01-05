@@ -337,7 +337,9 @@ Reply ONLY JSON:
     };
   }
 }
-
+function detectFastLane(text) {
+  return /(cosplay|cosplayer|game|gamer|hobby|anime|what do you like|what are you into)/i.test(text);
+}
 function detectAskForPhotos(text) {
   return /(see.*photo|see.*pic|your photo|your pics|show me|can i see|your cosplay)/i.test(text);
 }
@@ -682,7 +684,15 @@ app.post("/webhook", async (req, res) => {
   }
   user.message_count++;
   user.last_active = Date.now();
-  
+
+  /* ========= FAST LANE (SKIP STRANGER) ========= */
+  if (
+    user.state === "stranger" &&
+    detectFastLane(text)
+  ) {
+    user.state = "casual";
+  }
+
   // reset weekly sale count mỗi 7 ngày
   if (Date.now() - user.weekly_reset_at > 7 * 24 * 60 * 60 * 1000) {
   user.weekly_sale_count = 0;
