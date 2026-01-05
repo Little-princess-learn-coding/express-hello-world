@@ -1,11 +1,13 @@
 import express from "express";
 import fetch from "node-fetch";
-import {
+import 
+{
   createInitialUserState,
   onUserMessage,
   canAttemptSale,
   isTimeWaster
-} from "./state/userState.js";
+} 
+  from "./state/userState.js";
 
 const imageCache = {};
 const app = express();
@@ -115,7 +117,6 @@ async function callOpenAI(systemPrompt, userMessage) {
 }
 
 /* ================== USER STATE ================== */
-import { createInitialUserState } from "./state/userState.js";
 const users = {};
 
 function getUser(chatId) {
@@ -169,13 +170,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function calculateDelay(user, replyText) {
   // Stranger – reply đầu tiên rất chậm
-  if (!user.firstReplySent && user.state === "stranger") {
+  if (!user.firstReplySent && user.state.relationship_state === "stranger") {
     return 180000 + Math.random() * 120000; // 3–5 phút
   }
 
   // Base delay theo state
   let baseDelay;
-  switch (user.state) {
+  switch (user.state.relationship_state) {
     case "stranger":
       baseDelay = 2000;
       break;
@@ -337,7 +338,7 @@ function applyIntent(user, intentData) {
 
   if (intentData.intent === "flirt" || intentData.intent === "horny") {
     updates.relationship_level = Math.min(user.relationship_level + 2, 10);
-    updates.state = "casual";
+    user.state.relationship_state = "casual";
   }
 
   if (intentData.intent === "care") {
@@ -369,12 +370,12 @@ function applyImageIntent(user, imageType) {
   switch (imageType) {
     case "selfie":
       user.relationship_level += 1;
-      user.state = "casual";
+      user.state.relationship_state = "casual";
       return { intent: "flirt", mood: "playful" };
 
     case "body_flex":
       user.relationship_level += 2;
-      user.state = "casual";
+      user.state.relationship_state = "casual";
       return { intent: "flirt", mood: "horny", saleReady: true };
 
     case "pet":
@@ -395,23 +396,9 @@ function applyImageIntent(user, imageType) {
 }
 
 /* ================== SALE LOGIC ================== */
-function canAttemptSale(user) {
+
+function canAttemptSaleByPolicy(user) {
   const now = Date.now();
-
-  // hard block
-  if (user.state === "stranger") {
-    return { allow: false, reason: "stranger" };
-  }
-
-  if (user.state === "time_waster") {
-    return { allow: false, reason: "time_waster" };
-  }
-
-  // failed too many times → mark time waster
-  if (user.failed_sale_count >= 3) {
-    user.state = "time_waster";
-    return { allow: false, reason: "too_many_failed_sales" };
-  }
 
   // relationship too low
   if (user.relationship_level < 5) {
@@ -444,8 +431,9 @@ function canAttemptSale(user) {
 }
 
 function chooseSaleStrategy(user) {
-  if (user.state === "casual") return "sale_second_or_more";
-  if (user.state === "supporter") return "return_support";
+  const rs = user.state.relationship_state;
+  if (rs === "casual") return "sale_second_or_more";
+  if (rs === "supporter") return "return_support";
   return null;
 }
 
@@ -516,7 +504,7 @@ User profile (if known):
   return `
 ${profilePrompt}
 
-Relationship state: ${user.state}
+Relationship state: ${user.state.relationship_state}
 Relationship level: ${user.relationship_level}
 
 Recent conversation:
@@ -733,7 +721,6 @@ try {
   console.log("Memory extract failed:", e.message);
 }
 
-
   /* ========= 3️⃣ INTENT + MOOD DETECTION ========= */
   const intentData = await detectIntent(
     user,
@@ -744,10 +731,18 @@ try {
   const modelChoice = decideModel(user, intentData);
 
   /* ========= 4️⃣ SALE DECISION ========= */
-  const saleDecision = canAttemptSale(user);
   let strategy = null;
-  if (saleDecision.allow) {
-    strategy = chooseSaleStrategy(user, intentData);
+  
+  // tầng 1: check theo STATE MACHINE (stranger / casual / supporter / time_waster)
+  const allowByState = canAttemptSale(user.state);
+  
+  if (allowByState) {
+    // tầng 2: check theo SALE POLICY (cooldown, weekly limit, relationship_level)
+    const policyDecision = canAttemptSaleByPolicy(user);
+  
+    if (policyDecision.allow) {
+      strategy = chooseSaleStrategy(user, intentData);
+    }
   }
 
 /* ========= 5️⃣ BUILD PROMPT + CALL AI ========= */
