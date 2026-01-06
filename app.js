@@ -783,22 +783,26 @@ try {
     return; // ⛔ RẤT QUAN TRỌNG: dừng flow tại đây
   }
 
-  /* ========= 4️⃣ SALE DECISION ========= */
-  let strategy = null;
-  
-  if (
-    user.emotional_ready &&
-    !user.has_asked_support
-  ) {
-    strategy = "first_sale_locked";
+/* ========= 4️⃣ SALE DECISION ========= */
+let strategy = null;
+
+// FIRST SALE — CHỈ DÀNH CHO STRANGER
+if (
+  user.state === "stranger" &&
+  user.emotional_ready &&
+  !user.has_asked_support
+) {
+  strategy = "first_sale";
+}
+
+// REPEAT SALE — SAU KHI ĐÃ QUA FIRST SALE
+else if (user.state !== "stranger") {
+  const saleDecision = canAttemptSale(user);
+  if (saleDecision.allow) {
+    strategy = chooseSaleStrategy(user, intentData);
   }
-  // REPEAT SALE (after first support)
-  else if (user.has_asked_support) {
-    const saleDecision = canAttemptSale(user);
-    if (saleDecision.allow) {
-      strategy = chooseSaleStrategy(user, intentData);
-    }
-  }
+}
+
 
 /* ========= 5️⃣ BUILD PROMPT + CALL AI ========= */
 let replyText;
