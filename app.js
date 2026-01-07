@@ -7,8 +7,10 @@ import
   canAttemptSale,
   isTimeWaster
 } 
-  from "./state/userState.js";
+from "./state/userState.js";
+
 import STAGE_5A_PROMPT from "./prompts/stage5A.content.js";
+const REPEATED_SALE_GUIDE = require("./repeated_sale");
 
 const imageCache = {};
 const app = express();
