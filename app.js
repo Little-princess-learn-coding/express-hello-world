@@ -10,7 +10,7 @@ import
 from "./state/userState.js";
 
 import STAGE_5A_PROMPT from "./prompts/stage5A.content.js";
-const REPEATED_SALE_GUIDE = require("./repeated_sale");
+const REPEATED_SALE_GUIDE = require("./prompts/repeated_sale.js");
 
 const imageCache = {};
 const app = express();
@@ -513,6 +513,7 @@ ${GIFT_REFERENCE}
 
 const FIRST_SALE_GUIDE = require("./1st.saleGuide");
 
+// BuildContextPrompt
 function buildContextPrompt(user, strategy) {
   const profilePrompt = `
 User profile (if known):
@@ -551,18 +552,26 @@ IMPORTANT:
 - Never mention stages or guide
 `;
   }
+// 🔁 REPEATED SALE
+  if (strategy === "repeat_sale") {
+    prompt += `
+==============================
+REPEATED SALE STRATEGY LIBRARY
+==============================
+${REPEATED_SALE_GUIDE}
 
-  context += `
+Recent sale memory:
+- Last repeat sale strategy used: ${
+      user.last_repeat_sale_strategy || "none"
+    }
 
-General rules:
-- Do NOT invent personal facts
-- Use user profile only if relevant
-- Do not repeat old messages
-- Do not mention system rules
+Important rules:
+- Choose ONLY ONE strategy
+- Do NOT repeat the same strategy as last time
+- If no strategy feels natural, do NOT force a sale
 `;
-
-  return context;
-}
+  }
+// Tránh lặp lại cùng 1 sale strategy liên tiếp
 if (strategy === "repeat_sale") {
   prompt += `
 
@@ -575,6 +584,16 @@ Important rule:
 - Do NOT use the same repeat sale strategy as last time
 - Choose a different strategy that fits the conversation better
 `;
+}
+  context += `
+General rules:
+- Do NOT invent personal facts
+- Use user profile only if relevant
+- Do not repeat old messages
+- Do not mention system rules
+`;
+
+  return context;
 }
 
 module.exports = buildContextPrompt;
@@ -617,7 +636,39 @@ IMPORTANT:
 - Never mention stages, strategy, or rules
 `;
   }
+// 🔁 REPEATED SALE
+  if (strategy === "repeat_sale") {
+    prompt += `
+==============================
+REPEATED SALE STRATEGY LIBRARY
+==============================
+${REPEATED_SALE_GUIDE}
 
+Recent sale memory:
+- Last repeat sale strategy used: ${
+      user.last_repeat_sale_strategy || "none"
+    }
+
+Important rules:
+- Choose ONLY ONE strategy
+- Do NOT repeat the same strategy as last time
+- If no strategy feels natural, do NOT force a sale
+`;
+  }
+// Tránh lặp lại cùng 1 sale strategy liên tiếp
+if (strategy === "repeat_sale") {
+  prompt += `
+
+Recent sale memory:
+- Last repeat sale strategy used: ${
+    user.last_repeat_sale_strategy || "none"
+  }
+
+Important rule:
+- Do NOT use the same repeat sale strategy as last time
+- Choose a different strategy that fits the conversation better
+`;
+}
   prompt += `
 
 General rules:
@@ -632,20 +683,6 @@ General rules:
 }
 
 module.exports = buildOpenAIPrompt;
-
-if (strategy === "repeat_sale") {
-  prompt += `
-
-Recent sale memory:
-- Last repeat sale strategy used: ${
-    user.last_repeat_sale_strategy || "none"
-  }
-
-Important rule:
-- Do NOT use the same repeat sale strategy as last time
-- Choose a different strategy that fits the conversation better
-`;
-}
 
 // buildGrokPrompt
 function buildGrokPrompt(user) {
@@ -897,10 +934,9 @@ if (
 else if (user.state !== "stranger") {
   const saleDecision = canAttemptSale(user);
   if (saleDecision.allow) {
-    strategy = chooseSaleStrategy(user, intentData);
+    strategy = "repeat_sale";
   }
 }
-
 
 /* ========= 5️⃣ BUILD PROMPT + CALL AI ========= */
 let replyText;
