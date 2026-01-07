@@ -135,6 +135,10 @@ function getUser(chatId) {
       weekly_sale_count: 0,
       weekly_reset_at: Date.now(),
 
+      // 🔁 repeated sale memory
+      last_repeat_sale_strategy: null,
+      last_repeat_sale_at: null,
+
       // activity
       message_count: 0,
       created_at: Date.now(),
@@ -557,6 +561,19 @@ General rules:
 
   return context;
 }
+if (strategy === "repeat_sale") {
+  prompt += `
+
+Recent sale memory:
+- Last repeat sale strategy used: ${
+    user.last_repeat_sale_strategy || "none"
+  }
+
+Important rule:
+- Do NOT use the same repeat sale strategy as last time
+- Choose a different strategy that fits the conversation better
+`;
+}
 
 module.exports = buildContextPrompt;
 
@@ -613,6 +630,20 @@ General rules:
 }
 
 module.exports = buildOpenAIPrompt;
+
+if (strategy === "repeat_sale") {
+  prompt += `
+
+Recent sale memory:
+- Last repeat sale strategy used: ${
+    user.last_repeat_sale_strategy || "none"
+  }
+
+Important rule:
+- Do NOT use the same repeat sale strategy as last time
+- Choose a different strategy that fits the conversation better
+`;
+}
 
 // buildGrokPrompt
 function buildGrokPrompt(user) {
@@ -887,6 +918,12 @@ if (modelChoice === "openai") {
 
   /* ========= 6️⃣ SEND MESSAGE (typing + delay + burst) ========= */
   await sendBurstReplies(user, chatId, replyText);
+
+  // Lưu strategy đã dùng
+  if (strategy === "repeat_sale") {
+  user.last_repeat_sale_strategy = "repeat_sale";
+  user.last_repeat_sale_at = Date.now();
+}
 
   /* ========= 7️⃣ SAVE BOT REPLY (SHORT MEMORY) ========= */
   user.recentMessages.push(`Aurelia: ${replyText}`);
