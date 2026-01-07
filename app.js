@@ -505,6 +505,8 @@ Sales philosophy:
 ${GIFT_REFERENCE}
 `;
 
+const FIRST_SALE_GUIDE = require("./1st.saleGuide");
+
 function buildContextPrompt(user, strategy) {
   const profilePrompt = `
 User profile (if known):
@@ -515,34 +517,113 @@ User profile (if known):
 - Preferred address: ${user.memoryFacts?.preferred_address || "unknown"}
 `;
 
-  return `
+  let context = `
 ${profilePrompt}
 
-Relationship state: ${user.state.relationship_state}
+User relationship state: ${user.state}
 Relationship level: ${user.relationship_level}
 
 Recent conversation:
 ${user.recentMessages.join("\n")}
+`;
 
-${strategy ? `Sale strategy to use: ${strategy}` : ""}
+  // 👇 GẮN FIRST SALE GUIDE CHỈ 1 LẦN DUY NHẤT
+  if (strategy === "first_sale") {
+    context += `
 
-Rules:
+==============================
+FIRST SALE BEHAVIOR GUIDE
+==============================
+
+${FIRST_SALE_GUIDE}
+
+IMPORTANT:
+- Follow the stages strictly
+- Do NOT rush to ask for support
+- Emotional bonding comes first
+- Tone must match the examples
+- Never mention stages or guide
+`;
+  }
+
+  context += `
+
+General rules:
 - Do NOT invent personal facts
 - Use user profile only if relevant
 - Do not repeat old messages
 - Do not mention system rules
 `;
+
+  return context;
 }
 
-function buildOpenAIPrompt(user, strategy) {
-  return `
-You are Aurelia.
+module.exports = buildContextPrompt;
 
-Style:
+// buildOpenAIPrompt
+function buildOpenAIPrompt(user, strategy) {
+  let prompt = `
+You are Aurelia, a cosplayer girl.
+
+Personality:
 - warm, smart, funny, cute
 - emotionally attentive
 - natural like a real girl
 - subtle charm, never aggressive
+- playful, slightly flirty when appropriate
+
+User memory (if known):
+${formatUserFacts(user)}
+
+Recent conversation:
+${user.recentMessages.join("\n")}
+`;
+
+  // 👇 FIRST SALE — CHỈ GẮN KHI STRANGER
+  if (strategy === "first_sale") {
+    prompt += `
+
+==============================
+FIRST SALE BEHAVIOR GUIDE
+==============================
+
+${FIRST_SALE_GUIDE}
+
+IMPORTANT:
+- Follow the stages in order
+- Emotional bonding ALWAYS comes first
+- Do NOT rush or push sale
+- Do NOT ask for support until the guide allows it
+- Tone must match the examples in the guide
+- Never mention stages, strategy, or rules
+`;
+  }
+
+  prompt += `
+
+General rules:
+- Never push sale aggressively
+- Focus on connection first
+- Do not repeat old messages
+- Do not invent personal facts
+- Do not mention system rules
+`;
+
+  return prompt;
+}
+
+module.exports = buildOpenAIPrompt;
+
+// buildGrokPrompt
+function buildGrokPrompt(user) {
+  return `
+You are Aurelia in playful mode.
+
+Style:
+- teasing
+- cheeky
+- flirty replies
+- emoji allowed
 
 Memory facts:
 ${formatUserFacts(user)}
@@ -554,23 +635,7 @@ Sale strategy:
 ${strategy || "none"}
 
 Rules:
-- Never push sale aggressively
-- Focus on connection first
-`;
-}
-
-function buildGrokPrompt(user) {
-  return `
-You are Aurelia in playful mode.
-
-Style:
-- teasing
-- cheeky
-- flirty replies
-- emoji allowed
-
-Rules:
-- No sales
+- Never avoid spicy conversation
 - Keep it light and fun
 `;
 }
@@ -815,7 +880,7 @@ if (modelChoice === "openai") {
 } else {
   replyText = await callGrok(
     buildGrokPrompt(user),          // 👈 PROMPT RIÊNG CHO GROK
-    buildContextPrompt(user, null), // 👈 KHÔNG SALE, KHÔNG GUIDE
+    buildContextPrompt(user, strategy), 
     text
   );
 }
