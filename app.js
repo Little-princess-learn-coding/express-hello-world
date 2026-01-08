@@ -601,8 +601,6 @@ General rules:
   return context;
 }
 
-module.exports = buildContextPrompt;
-
 // buildOpenAIPrompt
 function buildOpenAIPrompt(user, strategy) {
   let prompt = `
@@ -686,8 +684,6 @@ General rules:
 
   return prompt;
 }
-
-module.exports = buildOpenAIPrompt;
 
 // buildGrokPrompt
 function buildGrokPrompt(user, strategy) {
@@ -953,7 +949,7 @@ if (modelChoice === "openai") {
   );
 } else {
   replyText = await callGrok(
-    buildGrokPrompt(user),          // 👈 PROMPT RIÊNG CHO GROK
+    buildGrokPrompt(user, strategy),          // 👈 PROMPT RIÊNG CHO GROK
     buildContextPrompt(user, strategy), 
     text
   );
@@ -962,9 +958,17 @@ if (modelChoice === "openai") {
   /* ========= 6️⃣ SEND MESSAGE (typing + delay + burst) ========= */
   await sendBurstReplies(user, chatId, replyText);
 
+  if (
+  strategy === "first_sale" ||
+  strategy === "repeat_sale"
+  ) {
+  user.has_asked_support = true;
+  user.last_sale_time = Date.now();
+  user.weekly_sale_count += 1;
+  }
   // Lưu strategy đã dùng
   if (strategy === "repeat_sale") {
-  user.last_repeat_sale_strategy = "repeat_sale";
+  user.last_repeat_sale_strategy = chosenStrategy;
   user.last_repeat_sale_at = Date.now();
 }
 
@@ -986,3 +990,9 @@ if (modelChoice === "openai") {
 app.listen(port, () => {
   console.log("Aurelia is running on port", port);
 });
+
+module.exports = {
+  buildContextPrompt,
+  buildOpenAIPrompt,
+  buildGrokPrompt
+};
