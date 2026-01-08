@@ -554,7 +554,7 @@ IMPORTANT:
   }
 // 🔁 REPEATED SALE
   if (strategy === "repeat_sale") {
-    prompt += `
+    context += `
 ==============================
 REPEATED SALE STRATEGY LIBRARY
 ==============================
@@ -573,7 +573,7 @@ Important rules:
   }
 // Tránh lặp lại cùng 1 sale strategy liên tiếp
 if (strategy === "repeat_sale") {
-  prompt += `
+  context += `
 
 Recent sale memory:
 - Last repeat sale strategy used: ${
@@ -685,7 +685,7 @@ General rules:
 module.exports = buildOpenAIPrompt;
 
 // buildGrokPrompt
-function buildGrokPrompt(user) {
+function buildGrokPrompt(user, strategy) {
   return `
 You are Aurelia in playful mode.
 
