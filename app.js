@@ -465,8 +465,13 @@ function decideModel(user, intentData) {
   ) {
     return "grok";
   }
-
   if (intentData.intent === "horny") {
+    return "grok";
+  }
+  if (strategy === "repeat_sale" && chosenStrategy === "role_play") {
+    return "grok";
+  }
+  if (strategy === "repeat_sale" && chosenStrategy === "exclusive_desire") {
     return "grok";
   }
 
@@ -527,7 +532,7 @@ User profile (if known):
   let context = `
 ${profilePrompt}
 
-User relationship state: ${user.state}
+User relationship state: ${user.state.relationship_state}
 Relationship level: ${user.relationship_level}
 
 Recent conversation:
@@ -822,10 +827,10 @@ app.post("/webhook", async (req, res) => {
 
   /* ========= FAST LANE (SKIP STRANGER) ========= */
   if (
-    user.state === "stranger" &&
+    user.state.relationship_state === "stranger" &&
     detectFastLane(text)
   ) {
-    user.state = "casual";
+    user.state.relationship_state = "casual";
   }
 
   // reset weekly sale count mỗi 7 ngày
@@ -851,7 +856,7 @@ app.post("/webhook", async (req, res) => {
   
   /* ========= EMOTIONAL SUPPORT CHECK (STAGE 4 DONE) ========= */
   if (
-    user.state === "casual" &&
+    user.state.relationship_state === "casual" &&
     detectEmotionalSupport(text)
   ) {
     user.emotional_ready = true;
@@ -923,7 +928,7 @@ let strategy = null;
 
 // FIRST SALE — CHỈ DÀNH CHO STRANGER
 if (
-  user.state === "stranger" &&
+  user.state.relationship_state === "stranger" &&
   user.emotional_ready &&
   !user.has_asked_support
 ) {
@@ -931,7 +936,7 @@ if (
 }
 
 // REPEAT SALE — SAU KHI ĐÃ QUA FIRST SALE
-else if (user.state !== "stranger") {
+else if (user.state.relationship_state !== "stranger") {
   const saleDecision = canAttemptSale(user);
   if (saleDecision.allow) {
     strategy = "repeat_sale";
