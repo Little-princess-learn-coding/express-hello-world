@@ -127,11 +127,18 @@ function getUser(chatId) {
     users[chatId] = {
       chatId,
 
-       // ✅ STATE MACHINE LÕI (đến từ userState.js)
-      state: createInitialUserState(),
+      // ✅ STATE MACHINE LÕI
+      state: createInitialUserState(), // stranger | casual | supporter | time_waster
       relationship_level: 0,
 
-      // sale tracking
+      /* ===== TIME / CONVERSATION CONTEXT ===== */
+      conversation_mode: "idle", 
+      // idle | chatting | flirting | selling | resting
+
+      last_conversation_at: null,
+      wind_down: false,
+
+      /* ===== SALE TRACKING ===== */
       failed_sale_count: 0,
       last_sale_time: null,
       weekly_sale_count: 0,
@@ -141,15 +148,15 @@ function getUser(chatId) {
       last_repeat_sale_strategy: null,
       last_repeat_sale_at: null,
 
-      // activity
+      /* ===== ACTIVITY ===== */
       message_count: 0,
       created_at: Date.now(),
       last_active: Date.now(),
 
-      // 🧠 SHORT MEMORY
+      /* ===== SHORT MEMORY ===== */
       recentMessages: [],
 
-      // 🧠 MEMORY FACTS (để phần B)
+      /* ===== LONG MEMORY FACTS ===== */
       memoryFacts: {
         name: null,
         age: null,
@@ -158,8 +165,8 @@ function getUser(chatId) {
         preferred_address: null
       },
 
-      // thêm cho delay & realism
-      firstReplySent: false,   // CHÌA KHOÁ delay 3–5 phút
+      /* ===== BEHAVIOR FLAGS ===== */
+      firstReplySent: false,
       conversationClosed: false,
 
       has_seen_content: false,
@@ -171,13 +178,31 @@ function getUser(chatId) {
 }
 
 function updateUser(chatId, updates) {
-  const user = getUser(chatId); // đảm bảo tồn tại
+  const user = getUser(chatId);
   Object.assign(user, updates);
   user.last_active = Date.now();
 }
 
+
 /* ================== UTILS ================== */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function getVietnamTime() {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utc + 7 * 60 * 60 * 1000);
+}
+
+function getTimeContext() {
+  const vnTime = getVietnamTime();
+  const hour = vnTime.getHours();
+
+  if (hour >= 6 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 18) return "afternoon";
+  if (hour >= 18 && hour < 22) return "evening";
+  if (hour >= 22 || hour < 2) return "night";
+  return "deep_night"; // 02:00 – 05:59
+}
 
 function calculateDelay(user, replyText) {
   // Stranger – reply đầu tiên rất chậm
@@ -719,7 +744,20 @@ app.post("/webhook", async (req, res) => {
   if (msg.photo) {
   const chatId = msg.chat.id;
   const user = getUser(chatId);
-  
+
+    // Lấy time context
+  const timeContext = getTimeContext();
+  if (timeContext === "deep_night") {
+  // Nếu bot đang idle → không trả lời
+  if (
+    user.conversation_mode === "idle" ||
+    user.conversation_mode === "resting"
+  ) {
+    return res.sendStatus(200);
+  }
+}
+
+    
   // ✅ UPDATE USER STATE (ảnh cũng là interaction)
   onUserMessage(user.state);
   
@@ -820,6 +858,13 @@ app.post("/webhook", async (req, res) => {
   }
   user.message_count++;
   user.last_active = Date.now();
+
+  if (
+  user.conversation_mode === "idle" ||
+  user.conversation_mode === "resting"
+  ) {
+  user.conversation_mode = "chatting";
+  }
 
   /* ========= FAST LANE (SKIP STRANGER) ========= */
   if (
@@ -937,6 +982,24 @@ else if (user.state.relationship_state !== "stranger") {
   if (saleDecision.allow) {
     strategy = "repeat_sale";
   }
+}
+if (strategy) {
+  user.conversation_mode = "selling";
+}
+if (
+  timeContext === "deep_night" &&
+  user.conversation_mode !== "selling"
+) {
+  if (
+    user.conversation_mode === "chatting" ||
+    user.conversation_mode === "flirting"
+  ) {
+    user.wind_down = true;
+  }
+}
+  if (user.wind_down) {
+  user.conversation_mode = "resting";
+  user.conversationClosed = true;
 }
 
 /* ========= 5️⃣ BUILD PROMPT + CALL AI ========= */
