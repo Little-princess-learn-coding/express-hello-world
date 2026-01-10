@@ -139,10 +139,14 @@ function getUser(chatId) {
 
       /* ===== SALE TRACKING ===== */
       failed_sale_count: 0,
-      last_sale_time: null,
-      weekly_sale_count: 0,
+     
+      total_sale_attempts: 0,   // tổng số lần bot đã sale user
+      total_sale_success: 0,    // tổng số lần user support thành công
+      
+      weekly_sale_count: 0,     // số lần sale trong tuần
       weekly_reset_at: Date.now(),
-
+      last_sale_time: null,
+   
       // 🔁 repeated sale memory
       last_repeat_sale_strategy: null,
       last_repeat_sale_at: null,
@@ -911,7 +915,7 @@ if (
   if (detectSaleSuccess(text)) {
     onSaleSuccess(user.state);
     user.failed_sale_count = 0;
-    user.weekly_sale_count += 1;
+    user.total_sale_success += 1; // ⬅️ QUAN TRỌNG
     user.last_sale_time = Date.now();
     user.relationship_level = Math.min(10, user.relationship_level + 2);
   }
@@ -1019,6 +1023,16 @@ else if (user.state.relationship_state !== "stranger") {
     strategy = "repeat_sale";
   }
 }
+
+if (
+  strategy === "first_sale_locked" ||
+  strategy === "repeat_sale"
+) {
+  user.total_sale_attempts += 1;
+  user.weekly_sale_count += 1;
+  user.last_sale_time = Date.now();
+}
+
 if (user.conversation_mode === "selling") {
   user.conversation_mode = "chatting";
 }
