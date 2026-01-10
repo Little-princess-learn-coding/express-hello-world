@@ -337,7 +337,7 @@ If not present, use null.
 // Xác định intent
 async function detectIntent(user, text, recentMessages) {
   const prompt = `
-You are analyzing a chat message sent to a virtual girlfriend named Aurelia.
+You are analyzing a chat message sent to a female cosplayer named Aurelia.
 
 User message:
 "${text}"
