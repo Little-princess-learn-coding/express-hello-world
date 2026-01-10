@@ -563,6 +563,9 @@ Relationship level: ${user.relationship_level}
 Recent conversation:
 ${user.recentMessages.join("\n")}
 `;
+Time context: ${timeContext}
+Conversation mode: ${user.conversation_mode}
+Wind down: ${user.wind_down ? "yes" : "no"}
 
   // 👇 GẮN FIRST SALE GUIDE CHỈ 1 LẦN DUY NHẤT
   if (strategy === "first_sale") {
@@ -756,8 +759,18 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 }
-
-    
+if (
+  timeContext === "deep_night" &&
+  user.conversation_mode !== "selling"
+) {
+  if (
+    user.conversation_mode === "chatting" ||
+    user.conversation_mode === "flirting"
+  ) {
+    user.wind_down = true;
+  }
+}
+   
   // ✅ UPDATE USER STATE (ảnh cũng là interaction)
   onUserMessage(user.state);
   
@@ -938,6 +951,15 @@ try {
     text,
     user.recentMessages
   );
+  if (intentData.intent === "flirt") {
+  user.conversation_mode = "flirting";
+} else if (intentData.intent === "normal") {
+  user.conversation_mode = "chatting";
+}
+  if (user.wind_down) {
+  user.conversation_mode = "resting";
+  user.conversationClosed = true;
+}
   applyIntent(user, intentData);
   const modelChoice = decideModel(user, intentData);
 
@@ -985,21 +1007,6 @@ else if (user.state.relationship_state !== "stranger") {
 }
 if (strategy) {
   user.conversation_mode = "selling";
-}
-if (
-  timeContext === "deep_night" &&
-  user.conversation_mode !== "selling"
-) {
-  if (
-    user.conversation_mode === "chatting" ||
-    user.conversation_mode === "flirting"
-  ) {
-    user.wind_down = true;
-  }
-}
-  if (user.wind_down) {
-  user.conversation_mode = "resting";
-  user.conversationClosed = true;
 }
 
 /* ========= 5️⃣ BUILD PROMPT + CALL AI ========= */
