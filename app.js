@@ -560,12 +560,25 @@ ${profilePrompt}
 User relationship state: ${user.state.relationship_state}
 Relationship level: ${user.relationship_level}
 
+=== TIME CONTEXT ===
+Current time context: ${timeContext}
+Conversation mode: ${user.conversation_mode}
+Wind down mode: ${user.wind_down ? "yes" : "no"}
+
+Behavior rules based on time:
+- If wind down = yes:
+  - keep replies short
+  - be softer and calmer
+  - do NOT open new topics
+  - gradually end the conversation naturally
+- If time context is deep_night:
+  - no new sale
+  - no teasing escalation
+  - no asset suggestion
+
 Recent conversation:
 ${user.recentMessages.join("\n")}
 `;
-Time context: ${timeContext}
-Conversation mode: ${user.conversation_mode}
-Wind down: ${user.wind_down ? "yes" : "no"}
 
   // 👇 GẮN FIRST SALE GUIDE CHỈ 1 LẦN DUY NHẤT
   if (strategy === "first_sale") {
@@ -604,6 +617,7 @@ Important rules:
 - If no strategy feels natural, do NOT force a sale
 `;
   }
+
 // Tránh lặp lại cùng 1 sale strategy liên tiếp
 if (strategy === "repeat_sale") {
   context += `
@@ -1020,7 +1034,7 @@ if (modelChoice === "openai") {
 } else {
   replyText = await callGrok(
     buildGrokPrompt(user, strategy),          // 👈 PROMPT RIÊNG CHO GROK
-    buildContextPrompt(user, strategy), 
+    buildContextPrompt(user, strategy, timeContext), 
     text
   );
 }
