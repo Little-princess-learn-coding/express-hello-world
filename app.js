@@ -126,6 +126,8 @@ function getUser(chatId) {
     users[chatId] = {
       chatId,
 
+      sale_clarification_pending: false,
+
       // ✅ STATE MACHINE LÕI
       state: createInitialUserState(), // stranger | casual | supporter | time_waster
       relationship_level: 0,
@@ -345,13 +347,20 @@ User message:
 Recent context:
 ${recentMessages.join("\n")}
 
-Classify the user's intent and mood.
+Classify the user's intent, mood, and sale response.
+
+saleResponse definitions:
+- accepted: user confirms support or payment
+- delayed: user wants to support later or mentions timing
+- price_hesitation: user wants to support but mentions money or price issues
+- rejected: user clearly declines supporting
+- none: no sale-related response
 
 Reply ONLY JSON:
 {
-  "intent": "flirt | care | chat | horny | tired | sale_response | goodbye | neutral",
+  "intent": "flirt | care | chat | horny | tired | ask_photo | bored | goodbye | neutral",
   "mood": "happy | tired | sad | playful | horny | cold | neutral",
-  "saleResponse": "none | interested | hesitant | price_hesitation | rejected"
+  "saleResponse": "none | accepted | delayed | price_hesitation | rejected"
 }
 `;
 
@@ -386,7 +395,6 @@ function applyIntent(user, intentData) {
 
   if (intentData.intent === "flirt" || intentData.intent === "horny") {
     updates.relationship_level = Math.min(user.relationship_level + 2, 10);
-    user.state.relationship_state = "casual";
   }
 
   if (intentData.intent === "care") {
@@ -418,12 +426,10 @@ function applyImageIntent(user, imageType) {
   switch (imageType) {
     case "selfie":
       user.relationship_level += 1;
-      user.state.relationship_state = "casual";
       return { intent: "flirt", mood: "playful" };
 
     case "body_flex":
       user.relationship_level += 2;
-      user.state.relationship_state = "casual";
       return { intent: "flirt", mood: "horny", saleReady: true };
 
     case "pet":
@@ -643,6 +649,13 @@ General rules:
 - Use user profile only if relevant
 - Do not repeat old messages
 - Do not mention system rules
+
+If Sale strategy is "clarify_sale":
+- The user gave a vague answer about supporting
+- Ask them again gently to clarify
+- Be cute, soft, non-pushy
+- Do NOT change topic
+- Do NOT mention money directly
 `;
 
   return context;
@@ -964,16 +977,18 @@ try {
 }
 
   /* ========= 3️⃣ INTENT + MOOD DETECTION ========= */
-  const intentData = await detectIntent(
-    user,
-    text,
-    user.recentMessages
-  );
+  const intentData = await detectIntent(user, text, user.recentMessages);
+
   if (intentData.intent === "flirt") {
   user.conversation_mode = "flirting";
 } else if (intentData.intent === "normal") {
   user.conversation_mode = "chatting";
 }
+  
+  if (intentData.saleResponse === "none" && user.has_asked_support) {
+  user.sale_clarification_pending = true;
+}
+
   if (user.wind_down) {
   user.conversation_mode = "resting";
   user.conversationClosed = true;
@@ -1006,6 +1021,13 @@ try {
 
 /* ========= 4️⃣ SALE DECISION ========= */
 let strategy = null;
+  
+if (user.sale_clarification_pending) {
+  strategy = "clarify_sale";
+}
+if (intentData.saleResponse !== "none") {
+  user.sale_clarification_pending = false;
+}
 
 // FIRST SALE — CHỈ DÀNH CHO STRANGER
 if (
