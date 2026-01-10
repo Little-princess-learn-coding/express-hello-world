@@ -1,13 +1,12 @@
 import express from "express";
 import fetch from "node-fetch";
-import 
-{
+import {
   createInitialUserState,
   onUserMessage,
+  onSaleSuccess,
   canAttemptSale,
   isTimeWaster
-} 
-from "./state/userState.js";
+} from "./state/userState.js";
 
 import STAGE_5A_PROMPT from "./prompts/stage5A.content.js";
 const REPEATED_SALE_GUIDE = require("./prompts/repeated_sale.js");
@@ -483,7 +482,9 @@ function chooseSaleStrategy(user) {
 }
 
 // DECIDE MODEL
-function decideModel(user, intentData) {
+function decideModel(user, intentData, strategy)
+ {
+  const modelChoice = decideModel(user, intentData, strategy);
   if (
     intentData.intent === "flirt" &&
     user.relationship_level >= 4
@@ -544,7 +545,7 @@ ${GIFT_REFERENCE}
 const FIRST_SALE_GUIDE = require("./1st.saleGuide");
 
 // BuildContextPrompt
-function buildContextPrompt(user, strategy) {
+function buildContextPrompt(user, strategy, timeContext) {
   const profilePrompt = `
 User profile (if known):
 - Name: ${user.memoryFacts?.name || "unknown"}
@@ -756,13 +757,7 @@ Rules:
 /* ================== TELEGRAM WEBHOOK ================== */
 app.post("/webhook", async (req, res) => {
   const msg = req.body.message;
-  
-  // XỬ LÝ ẢNH
-  if (msg.photo) {
-  const chatId = msg.chat.id;
-  const user = getUser(chatId);
-
-    // Lấy time context
+      // Lấy time context
   const timeContext = getTimeContext();
   if (timeContext === "deep_night") {
   // Nếu bot đang idle → không trả lời
@@ -784,6 +779,11 @@ if (
     user.wind_down = true;
   }
 }
+  
+  // XỬ LÝ ẢNH
+  if (msg.photo) {
+  const chatId = msg.chat.id;
+  const user = getUser(chatId);
    
   // ✅ UPDATE USER STATE (ảnh cũng là interaction)
   onUserMessage(user.state);
@@ -1014,13 +1014,13 @@ if (
 
 // REPEAT SALE — SAU KHI ĐÃ QUA FIRST SALE
 else if (user.state.relationship_state !== "stranger") {
-  const saleDecision = canAttemptSale(user);
+  const saleDecision = canAttemptSaleByPolicy(user);
   if (saleDecision.allow) {
     strategy = "repeat_sale";
   }
 }
-if (strategy) {
-  user.conversation_mode = "selling";
+if (user.conversation_mode === "selling") {
+  user.conversation_mode = "chatting";
 }
 
 /* ========= 5️⃣ BUILD PROMPT + CALL AI ========= */
