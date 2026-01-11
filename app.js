@@ -123,7 +123,7 @@ const users = {};
 
 function getUser(chatId) {
   if (!users[chatId]) {
-    users[chatId] = {
+    users[chatId] = { 
       chatId,
 
       sale_clarification_pending: false,
@@ -149,10 +149,6 @@ function getUser(chatId) {
       weekly_reset_at: Date.now(),
       last_sale_time: null,
    
-      // 🔁 repeated sale memory
-      last_repeat_sale_strategy: null,
-      last_repeat_sale_at: null,
-
       /* ===== ACTIVITY ===== */
       message_count: 0,
       created_at: Date.now(),
@@ -995,6 +991,10 @@ try {
 }
   applyIntent(user, intentData);
   const modelChoice = decideModel(user, intentData);
+
+  if (intentData.saleResponse === "none" && user.has_asked_support) {
+  user.sale_clarification_pending = true;
+}
 
     /* ========= FAST CONTENT ACCESS (STAGE 5A) ========= */
   if (
