@@ -128,8 +128,8 @@ function getUser(chatId) {
 
       sale_clarification_pending: false,
 
-      // ✅ STATE MACHINE LÕI
-      state: createInitialUserState(), // stranger | casual | supporter | time_waster
+      // ✅ STATE MACHINE LÕI { relationship_state, messageCount, saleAttempts, ... }
+      state: createInitialUserState(), 
       relationship_level: 0,
 
       /* ===== TIME / CONVERSATION CONTEXT ===== */
