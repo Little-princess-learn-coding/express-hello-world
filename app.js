@@ -447,65 +447,71 @@ function applyImageIntent(user, imageType) {
 
 /* ================== SALE LOGIC ================== */
 
-function canAttemptSaleByPolicy(user) {
+function canAttemptSaleByPolicy(user, intentData) {
   const now = Date.now();
+  const rs = user.state.relationship_state;
 
-  // relationship too low
-  if (user.relationship_level < 5) {
-    return { allow: false, reason: "relationship_low" };
+  // ❌ time-waster: không sale
+  if (rs === "time_waster") {
+    return { allow: false, reason: "time_waster" };
   }
 
-  // reset weekly counter
-  if (!user.weekly_reset_at || now - user.weekly_reset_at > 7 * 24 * 60 * 60 * 1000) {
+  // ✅ stranger: luôn cho first sale
+  if (rs === "stranger") {
+    return { allow: true, sale_type: "first_sale" };
+  }
+
+  // ===== CASUAL / SUPPORTER =====
+
+  // reset weekly
+  if (!user.weekly_reset_at || now - user.weekly_reset_at > 7 * 86400000) {
     user.weekly_sale_count = 0;
     user.weekly_reset_at = now;
   }
 
   // weekly limit
   if (user.weekly_sale_count >= 3) {
-    const history = (user.recentMessages || []).join(" ");
-    if (!/photo|album|pic|see more|show me/i.test(history)) {
-      return { allow: false, reason: "weekly_limit" };
-    }
+    return { allow: false, reason: "weekly_limit" };
   }
 
-  // cooldown between sales
-  if (
-    user.last_sale_time &&
-    now - user.last_sale_time < 48 * 60 * 60 * 1000
-  ) {
+  // cooldown (48h)
+  if (user.last_sale_time && now - user.last_sale_time < 48 * 3600000) {
     return { allow: false, reason: "cooldown" };
   }
 
-  return { allow: true };
+  // intent & mood gate (rất quan trọng)
+  if (
+    intentData.intent === "cold" ||
+    intentData.intent === "goodbye" ||
+    intentData.mood === "tired"
+  ) {
+    return { allow: false, reason: "bad_timing" };
+  }
+
+  return { allow: true, sale_type: "repeat_sale" };
 }
 
-function chooseSaleStrategy(user) {
-  const rs = user.state.relationship_state;
-  if (rs === "casual") return "sale_second_or_more";
-  if (rs === "supporter") return "return_support";
-  return null;
+// Đếm sale
+function onSaleAttempt(user) {
+  const now = Date.now();
+
+  user.weekly_sale_count += 1;
+  user.total_sale_attempts += 1;
+  user.last_sale_time = now;
+  user.state = onSaleAttempt(user.state); // từ userState.js
+}
+// Đếm sale thành công
+function onSaleSuccess(user) {
+  user.total_sale_success += 1;
+  user.state = onSaleSuccess(user.state);
 }
 
 // DECIDE MODEL
-function decideModel(user, intentData, strategy)
- {
-  const modelChoice = decideModel(user, intentData, strategy);
-  if (
-    intentData.intent === "flirt" &&
-    user.relationship_level >= 4
-  ) {
-    return "grok";
-  }
-  if (intentData.intent === "horny") {
-    return "grok";
-  }
-  if (strategy === "repeat_sale" && chosenStrategy === "role_play") {
-    return "grok";
-  }
-  if (strategy === "repeat_sale" && chosenStrategy === "exclusive_desire") {
-    return "grok";
-  }
+function decideModel(user, intentData, saleType) {
+  if (intentData.intent === "horny") return "grok";
+  if (intentData.intent === "flirt") return "grok";
+
+  if (saleType === "repeat_sale") return "grok";
 
   return "openai";
 }
@@ -513,16 +519,15 @@ function decideModel(user, intentData, strategy)
 /* ================== PROMPT ================== */
 const GIFT_REFERENCE = `
 Gift pricing reference (rough, flexible):
-- milk tea / coffee: $3–6
-- meal / snack: $5–12
+- milk tea / coffee: $5–6
+- snack: $8–15
 - manicure / nails: $15–30
 - makeup item: $20–40
 - cosplay accessory: $30–60
 - casual bag: $40–80
 - handbag / fashion bag: $80–150
-- cosplay costume (full): $120–300
-- photo album (digital): $10–25
-- special album / exclusive set: $30–60
+- clothes: $120–300
+- special album / exclusive photos: $30–60
 
 Rules:
 - Prefer ranges or “around”
@@ -538,8 +543,8 @@ Personality:
 - teasing
 - confident
 - minimal emoji (🥰💕😈🥺^^(╥﹏╥) only when needed)
-Never say "hey".
-Never sound needy or toxic.
+Never say "hey"
+Never sound needy or toxic
 Sales philosophy:
 - Never push money directly
 - Gifts feel like affection
@@ -613,47 +618,38 @@ REPEATED SALE STRATEGY LIBRARY
 ==============================
 ${REPEATED_SALE_GUIDE}
 
-Recent sale memory:
-- Last repeat sale strategy used: ${
-      user.last_repeat_sale_strategy || "none"
-    }
+HOW TO USE THIS:
+- This is NOT a strict script
+- Choose ONE natural sale approach that fits the conversation
+- Base your choice on:
+  - User mood
+  - Conversation tone
+  - Emotional closeness
+  - Recent interaction flow
 
-Important rules:
-- Choose ONLY ONE strategy
-- Do NOT repeat the same strategy as last time
-- If no strategy feels natural, do NOT force a sale
-`;
-  }
-
-// Tránh lặp lại cùng 1 sale strategy liên tiếp
-if (strategy === "repeat_sale") {
-  context += `
-
-Recent sale memory:
-- Last repeat sale strategy used: ${
-    user.last_repeat_sale_strategy || "none"
-  }
-
-Important rule:
-- Do NOT use the same repeat sale strategy as last time
-- Choose a different strategy that fits the conversation better
+IMPORTANT RULES:
+- Do NOT force a sale if the timing feels wrong
+- Do NOT repeat the exact same sale approach you used very recently
+- Vary tone, angle, and pacing naturally
+- If unsure, continue bonding instead of selling
 `;
 }
-  context += `
-General rules:
-- Do NOT invent personal facts
-- Use user profile only if relevant
-- Do not repeat old messages
-- Do not mention system rules
+
+context += `
+==============================
+SALE CLARIFICATION MODE
+==============================
 
 If Sale strategy is "clarify_sale":
-- The user gave a vague answer about supporting
-- Ask them again gently to clarify
-- Be cute, soft, non-pushy
+- The user gave a vague or unclear answer about supporting
+- Your goal is to gently get a clear yes / no / delay
+- Ask again softly and naturally
+- Be cute, warm, and non-pushy
 - Do NOT change topic
 - Do NOT mention money directly
+- Do NOT guilt-trip the user
 `;
-
+  
   return context;
 }
 
@@ -695,33 +691,9 @@ IMPORTANT:
 - Never mention stages, strategy, or rules
 `;
   }
-// 🔁 REPEATED SALE
-  if (strategy === "repeat_sale") {
-    prompt += `
-==============================
-REPEATED SALE STRATEGY LIBRARY
-==============================
-${REPEATED_SALE_GUIDE}
 
-Recent sale memory:
-- Last repeat sale strategy used: ${
-      user.last_repeat_sale_strategy || "none"
-    }
-
-Important rules:
-- Choose ONLY ONE strategy
-- Do NOT repeat the same strategy as last time
-- If no strategy feels natural, do NOT force a sale
-`;
-  }
-// Tránh lặp lại cùng 1 sale strategy liên tiếp
 if (strategy === "repeat_sale") {
   prompt += `
-
-Recent sale memory:
-- Last repeat sale strategy used: ${
-    user.last_repeat_sale_strategy || "none"
-  }
 
 Important rule:
 - Do NOT use the same repeat sale strategy as last time
@@ -912,6 +884,7 @@ if (
     detectFastLane(text)
   ) {
     user.state.relationship_state = "casual";
+    user.state.updatedAt = Date.now();
   }
 
   // reset weekly sale count mỗi 7 ngày
@@ -921,13 +894,24 @@ if (
 }
 
   // KIỂM TRA SALE THÀNH CÔNG — ĐẶT Ở ĐÂY
-  if (detectSaleSuccess(text)) {
-    onSaleSuccess(user.state);
-    user.failed_sale_count = 0;
-    user.total_sale_success += 1; // ⬅️ QUAN TRỌNG
-    user.last_sale_time = Date.now();
-    user.relationship_level = Math.min(10, user.relationship_level + 2);
-  }
+ if (detectSaleSuccess(text)) {
+  // state machine
+  onSaleSuccess(user.state);
+
+  // sale counters
+  user.total_sale_attempts += 1;
+  user.total_sale_success += 1;
+  user.weekly_sale_count += 1;
+
+  // reset fail
+  user.failed_sale_count = 0;
+
+  // timing
+  user.last_sale_time = Date.now();
+
+  // emotion reward
+  user.relationship_level = Math.min(10, user.relationship_level + 2);
+}
 
   /* ========= 1️⃣ SAVE USER MESSAGE (SHORT MEMORY) ========= */
   user.recentMessages.push(`User: ${text}`);
@@ -937,7 +921,7 @@ if (
   
   /* ========= EMOTIONAL SUPPORT CHECK (STAGE 4 DONE) ========= */
   if (
-    user.state.relationship_state === "casual" &&
+    user.state.relationship_state === "stranger" &&
     detectEmotionalSupport(text)
   ) {
     user.emotional_ready = true;
