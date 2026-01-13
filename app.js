@@ -385,6 +385,9 @@ function detectAskForPhotos(text) {
 function detectEmotionalSupport(text) {
   return /(yes|of course|i would|sure|i['’]ll be your fan|i support you)/i.test(text);
 }
+function botAskedForSupport(text) {
+  return /ko-fi|support me|buy my|help me saving|support me/i.test(text);
+}
 
 function applyIntent(user, intentData) {
   const updates = {};
@@ -1014,33 +1017,31 @@ if (intentData.saleResponse !== "none") {
 }
 
 // FIRST SALE — CHỈ DÀNH CHO STRANGER
-if (
+else if (
   user.state.relationship_state === "stranger" &&
   user.emotional_ready &&
   !user.has_asked_support
 ) {
   strategy = "first_sale";
+  user.conversation_mode = "selling";
 }
 
 // REPEAT SALE — SAU KHI ĐÃ QUA FIRST SALE
-else if (user.state.relationship_state !== "stranger") {
+else if (user.state.relationship_state !== "casual") {
   const saleDecision = canAttemptSaleByPolicy(user);
   if (saleDecision.allow) {
     strategy = "repeat_sale";
+    user.conversation_mode = "selling";
   }
 }
 
 if (
-  strategy === "first_sale_locked" ||
+  strategy === "first_sale" ||
   strategy === "repeat_sale"
 ) {
   user.total_sale_attempts += 1;
   user.weekly_sale_count += 1;
   user.last_sale_time = Date.now();
-}
-
-if (user.conversation_mode === "selling") {
-  user.conversation_mode = "chatting";
 }
 
 /* ========= 5️⃣ BUILD PROMPT + CALL AI ========= */
@@ -1061,20 +1062,22 @@ if (modelChoice === "openai") {
 
   /* ========= 6️⃣ SEND MESSAGE (typing + delay + burst) ========= */
   await sendBurstReplies(user, chatId, replyText);
-
+  
+  // ✅ CHỈ TÍNH SALE KHI BOT THỰC SỰ HỎI SUPPORT
   if (
-  strategy === "first_sale" ||
-  strategy === "repeat_sale"
+    (strategy === "first_sale" || strategy === "repeat_sale") &&
+    botAskedForSupport(replyText)
   ) {
-  user.has_asked_support = true;
-  user.last_sale_time = Date.now();
-  user.weekly_sale_count += 1;
+    user.has_asked_support = true;
+    user.last_sale_time = Date.now();
+    user.weekly_sale_count += 1;
+  
+    // thống kê tổng
+    user.total_sale_attempts += 1;
+  
+    // cập nhật state machine
+    onSaleAttempt(user.state);
   }
-  // Lưu strategy đã dùng
-  if (strategy === "repeat_sale") {
-  user.last_repeat_sale_strategy = chosenStrategy;
-  user.last_repeat_sale_at = Date.now();
-}
 
   /* ========= 7️⃣ SAVE BOT REPLY (SHORT MEMORY) ========= */
   user.recentMessages.push(`Aurelia: ${replyText}`);
