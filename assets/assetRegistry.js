@@ -45,6 +45,7 @@
     "nails_pink": {
       "type": "gift_image",
       "path": "/assets/gifts/nails_pink.jpg",
+      "send_gift_image": true,
       "confirmation_asset_id": "nails_pink_received",
       "metadata": {
         "item_type": "nails",
@@ -60,6 +61,7 @@
     "bag_blue": {
       "type": "gift_image",
       "path": "/assets/gifts/bag_blue.jpg",
+      "send_gift_image": true,
       "confirmation_asset_id": "bag_blue_received",
       "metadata": {
         "item_type": "bag",
@@ -76,6 +78,7 @@
     "bag_pink": {
       "type": "gift_image",
       "path": "/assets/gifts/bag_pink.jpg",
+      "send_gift_image": true,
       "confirmation_asset_id": "bag_pink_received",
       "metadata": {
         "item_type": "bag",
@@ -91,7 +94,8 @@
     },
     "milktea_taro": {
       "type": "gift_image",
-      "path": "/assets/gifts/milktea_taro.jpg",
+      "path": null,
+      "send_gift_image": false,
       "confirmation_asset_id": "milktea_taro_received",
       "metadata": {
         "item_type": "drink",
@@ -107,7 +111,8 @@
     },
     "milktea_brown_sugar": {
       "type": "gift_image",
-      "path": "/assets/gifts/milktea_brown_sugar.jpg",
+      "path": null,
+      "send_gift_image": false,
       "confirmation_asset_id": "milktea_brown_sugar_received",
       "metadata": {
         "item_type": "drink",
@@ -123,7 +128,8 @@
     },
     "snacks_comfort": {
       "type": "gift_image",
-      "path": "/assets/gifts/snacks.jpg",
+      "path": null,
+      "send_gift_image": false,
       "confirmation_asset_id": "snacks_received",
       "metadata": {
         "item_type": "food",
