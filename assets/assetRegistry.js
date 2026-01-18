@@ -2,7 +2,7 @@
   "memes": {
     "happy_cute": {
       "type": "meme",
-      "path": "/assets/memes/happy_cute.jpg",
+      "path": "/assets/files/meme/happy_cute.jpg",
       "metadata": {
         "emotion": "happy",
         "intensity": "medium",
@@ -15,7 +15,7 @@
     },
     "shy_flustered": {
       "type": "meme",
-      "path": "/assets/memes/shy_flustered.jpg",
+      "path": "/assets/files/meme/shy_flustered.jpg",
       "metadata": {
         "emotion": "shy",
         "intensity": "high",
@@ -28,12 +28,38 @@
     },
     "playful_teasing": {
       "type": "meme",
-      "path": "/assets/memes/playful_teasing.jpg",
+      "path": "/assets/files/meme/playful_teasing.jpg",
       "metadata": {
         "emotion": "playful",
         "intensity": "medium",
         "tone": "flirty",
         "context": "reply_tease"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "surprised_shocked": {
+      "type": "meme",
+      "path": "/assets/files/meme/surprised_shocked.jpg",
+      "metadata": {
+        "emotion": "surprised",
+        "intensity": "high",
+        "tone": "dramatic",
+        "context": "reply_shock"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "excited_happy": {
+      "type": "meme",
+      "path": "/assets/files/meme/excited_happy.jpg",
+      "metadata": {
+        "emotion": "excited",
+        "intensity": "high",
+        "tone": "cute",
+        "context": "reply_flirt"
       },
       "reusable": "unlimited",
       "auto_delete": false,
@@ -44,7 +70,7 @@
   "gift_images": {
     "nails_pink": {
       "type": "gift_image",
-      "path": "/assets/gifts/nails_pink.jpg",
+      "path": "/assets/files/gifts/nails_pink.jpg",
       "send_gift_image": true,
       "confirmation_asset_id": "nails_pink_received",
       "metadata": {
@@ -60,7 +86,7 @@
     },
     "bag_blue": {
       "type": "gift_image",
-      "path": "/assets/gifts/bag_blue.jpg",
+      "path": "/assets/files/gifts/bag_blue.jpg",
       "send_gift_image": true,
       "confirmation_asset_id": "bag_blue_received",
       "metadata": {
@@ -77,7 +103,7 @@
     },
     "bag_pink": {
       "type": "gift_image",
-      "path": "/assets/gifts/bag_pink.jpg",
+      "path": "/assets/files/gifts/bag_pink.jpg",
       "send_gift_image": true,
       "confirmation_asset_id": "bag_pink_received",
       "metadata": {
@@ -147,7 +173,7 @@
   "daily_life": {
     "food_ramen": {
       "type": "daily_life",
-      "path": "/assets/daily/food_ramen.jpg",
+      "path": "/assets/files/daily_life/food_ramen.jpg",
       "metadata": {
         "scene": "food",
         "mood": "happy"
@@ -158,7 +184,7 @@
     },
     "cafe_studying": {
       "type": "daily_life",
-      "path": "/assets/daily/cafe_study.jpg",
+      "path": "/assets/files/daily_life/cafe_study.jpg",
       "metadata": {
         "scene": "cafe",
         "mood": "chill"
@@ -172,7 +198,7 @@
   "post_support_confirmation": {
     "nails_pink_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/confirmations/nails_pink_received.jpg",
+      "path": "/assets/files/confirmations/nails_pink_received.jpg",
       "linked_gift_id": "nails_pink",
       "metadata": {
         "delay_minutes": 10080,
@@ -185,7 +211,7 @@
     },
     "bag_blue_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/confirmations/bag_blue_received.jpg",
+      "path": "/assets/files/confirmations/bag_blue_received.jpg",
       "linked_gift_id": "bag_blue",
       "metadata": {
         "delay_minutes": 10080,
@@ -198,7 +224,7 @@
     },
     "bag_pink_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/confirmations/bag_pink_received.jpg",
+      "path": "/assets/files/confirmations/bag_pink_received.jpg",
       "linked_gift_id": "bag_pink",
       "metadata": {
         "delay_minutes": 10080,
@@ -211,10 +237,10 @@
     },
     "milktea_taro_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/confirmations/milktea_taro_received.jpg",
+      "path": "/assets/files/confirmations/milktea_taro_received.jpg",
       "linked_gift_id": "milktea_taro",
       "metadata": {
-        "delay_minutes": 35,
+        "delay_minutes": 15,
         "description": "Aurelia drinking taro milktea - EXACT MATCH to milktea_taro gift"
       },
       "reusable_per_user": false,
@@ -224,10 +250,10 @@
     },
     "milktea_brown_sugar_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/confirmations/milktea_brown_sugar_received.jpg",
+      "path": "/assets/files/confirmations/milktea_brown_sugar_received.jpg",
       "linked_gift_id": "milktea_brown_sugar",
       "metadata": {
-        "delay_minutes": 35,
+        "delay_minutes": 18,
         "description": "Aurelia drinking brown sugar milktea - EXACT MATCH to milktea_brown_sugar gift"
       },
       "reusable_per_user": false,
@@ -237,10 +263,10 @@
     },
     "snacks_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/confirmations/snacks_received.jpg",
+      "path": "/assets/files/confirmations/snacks_received.jpg",
       "linked_gift_id": "snacks_comfort",
       "metadata": {
-        "delay_minutes": 45,
+        "delay_minutes": 30,
         "description": "Aurelia eating snacks - EXACT MATCH to snacks_comfort gift"
       },
       "reusable_per_user": false,
@@ -253,7 +279,7 @@
   "exclusive_selfies": {
     "reward_1": {
       "type": "exclusive_selfie",
-      "path": "/assets/selfies/exclusive_1.jpg",
+      "path": "/assets/files/tease_selfie/exclusive_1.jpg",
       "metadata": {
         "exclusivity_level": "high",
         "tease_level": "medium"
@@ -266,7 +292,7 @@
     },
     "reward_2": {
       "type": "exclusive_selfie",
-      "path": "/assets/selfies/exclusive_2.jpg",
+      "path": "/assets/files/tease_selfie/exclusive_2.jpg",
       "metadata": {
         "exclusivity_level": "high",
         "tease_level": "high"
@@ -282,7 +308,7 @@
   "tease_selfies": {
     "flirt_1": {
       "type": "tease_selfie",
-      "path": "/assets/selfies/tease_1.jpg",
+      "path": "/assets/files/tease_selfie/tease_1.jpg",
       "metadata": {
         "tease_level": "medium"
       },
@@ -293,7 +319,7 @@
     },
     "flirt_2": {
       "type": "tease_selfie",
-      "path": "/assets/selfies/tease_2.jpg",
+      "path": "/assets/files/tease_selfie/tease_2.jpg",
       "metadata": {
         "tease_level": "high"
       },
@@ -307,7 +333,7 @@
   "teaser_videos": {
     "album_preview_1": {
       "type": "teaser_video",
-      "path": "/assets/videos/teaser_1.mp4",
+      "path": "/assets/files/videos/teaser_1.mp4",
       "metadata": {
         "duration": 3,
         "purpose": "tease"
@@ -318,7 +344,7 @@
     },
     "redirect_kofi": {
       "type": "teaser_video",
-      "path": "/assets/videos/kofi_redirect.mp4",
+      "path": "/assets/files/videos/kofi_redirect.mp4",
       "metadata": {
         "duration": 5,
         "purpose": "redirect to ko-fi"
