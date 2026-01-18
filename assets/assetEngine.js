@@ -320,7 +320,7 @@ function parseAssetMarkers(aiResponse) {
 
 /**
  * Get the actual asset file to send
- * Returns: { asset, shouldScheduleConfirmation }
+ * Returns: { asset, shouldScheduleConfirmation, shouldSendImage }
  */
 function getAssetToSend(markers, strategyId, chatId) {
   if (!markers.hasAsset) return null;
@@ -347,9 +347,13 @@ function getAssetToSend(markers, strategyId, chatId) {
       asset.confirmation_asset_id !== undefined
     );
     
+    // Check if we should actually send the image (for food/drink, might be text-only)
+    const shouldSendImage = asset.send_gift_image !== false; // Default true if not specified
+    
     return {
       asset,
-      shouldScheduleConfirmation
+      shouldScheduleConfirmation,
+      shouldSendImage
     };
   }
   
