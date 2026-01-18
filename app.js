@@ -309,6 +309,37 @@ async function sendBurstReplies(user, chatId, text) {
     );
   }
 }
+/* ================== STRATEGY DETECTION ================== */
+function detectStrategyFromContext(user) {
+  // Check recent messages for context clues
+  const recentText = user.recentMessages.slice(-5).join(" ").toLowerCase();
+  
+  // Simple keyword matching
+  if (recentText.includes("gift") || recentText.includes("bag") || recentText.includes("nails")) {
+    return 1; // Gift strategy
+  }
+  if (recentText.includes("jealous") || recentText.includes("other girl")) {
+    return 2; // Jealousy
+  }
+  if (recentText.includes("sick") || recentText.includes("tired") || recentText.includes("unwell")) {
+    return 3; // Feeling unwell
+  }
+  if (recentText.includes("album") || recentText.includes("photo") || recentText.includes("cosplay")) {
+    return 4; // Album
+  }
+  if (recentText.includes("game") || recentText.includes("riddle") || recentText.includes("challenge")) {
+    return 5; // Joke reward
+  }
+  if (recentText.includes("roleplay") || recentText.includes("imagine")) {
+    return 6; // Roleplay
+  }
+  if (user.conversation_mode === "flirting" && recentText.includes("show")) {
+    return 7; // Exclusive desire
+  }
+  
+  // Default: return 0 (no specific strategy detected, AI will choose)
+  return 0;
+}
 
 /* ================== INTENT CLASSIFIER ================== */
 // Lấy thông tin user
@@ -626,6 +657,11 @@ IMPORTANT:
 `;
   }
 // 🔁 REPEATED SALE
+  // 🆕 ADD ASSET INSTRUCTIONS IF USING REPEAT SALE STRATEGY
+  if (strategy === "repeat_sale") {
+    const strategyId = detectStrategyFromContext(user);
+    prompt += buildAssetInstructions(strategyId, user.chatId, user.state);
+  }
   if (strategy === "repeat_sale") {
     context += `
 ==============================
@@ -1066,15 +1102,65 @@ if (modelChoice === "openai") {
   );
 } else {
   replyText = await callGrok(
-    buildGrokPrompt(user, strategy),          // 👈 PROMPT RIÊNG CHO GROK
+    buildGrokPrompt(user, strategy),
     buildContextPrompt(user, strategy, timeContext), 
     text
   );
 }
 
-  /* ========= 6️⃣ SEND MESSAGE (typing + delay + burst) ========= */
-  await sendBurstReplies(user, chatId, replyText);
+// 🆕 PARSE ASSET MARKERS FROM AI RESPONSE
+const assetMarkers = parseAssetMarkers(replyText);
+
+// Get clean text without markers
+const cleanReplyText = assetMarkers.cleanResponse;
+
+/* ========= 6️⃣ SEND MESSAGE (typing + delay + burst) ========= */
+await sendBurstReplies(user, chatId, cleanReplyText);
+
+// 🆕 SEND ASSET IF PRESENT
+if (assetMarkers.hasAsset) {
+  // Determine strategy ID if using repeat_sale
+  let strategyId = 0;
+  if (strategy === "repeat_sale") {
+    strategyId = detectStrategyFromContext(user);
+  }
   
+  // Small delay before sending asset (feels more natural)
+  await sleep(1500);
+  
+  // Get the actual asset to send
+  const assetData = getAssetToSend(assetMarkers, strategyId, chatId);
+  
+  if (assetData) {
+    const { asset, shouldScheduleConfirmation, shouldSendImage } = assetData;
+    
+    // Only send image if shouldSendImage is true
+    // For food/drink items, shouldSendImage = false (text only)
+    if (shouldSendImage) {
+      // Show "uploading photo" indicator
+      await sendUploadPhoto(chatId);
+      await sleep(800);
+      
+      const sendResult = await sendAsset(chatId, asset);
+      
+      if (sendResult && sendResult.ok) {
+        console.log(`✅ Sent ${asset.type} (${asset.assetId}) to ${chatId}`);
+      } else {
+        console.error('❌ Failed to send asset:', asset.assetId);
+      }
+    } else {
+      console.log(`ℹ️ Skipped sending image for ${asset.assetId} (text-only gift)`);
+    }
+    
+    // Schedule matching confirmation if this was a gift and user has supported before
+    if (shouldScheduleConfirmation && user.total_sale_success > 0) {
+      const confirmation = scheduleConfirmation(chatId, asset.assetId, asset);
+      if (confirmation) {
+        console.log(`📅 Scheduled ${confirmation.confirmationAssetId} for ${confirmation.delayMs / 60000} minutes`);
+      }
+    }
+  }
+}
   // ✅ CHỈ TÍNH SALE KHI BOT THỰC SỰ HỎI SUPPORT
   if (
     (strategy === "first_sale" || strategy === "repeat_sale") &&
@@ -1104,6 +1190,35 @@ if (modelChoice === "openai") {
 
   res.sendStatus(200);
 });
+
+/* ================== CONFIRMATION CHECKER ================== */
+async function checkAndSendPendingConfirmations() {
+  for (const chatId in users) {
+    const pending = getPendingConfirmations(chatId);
+    
+    for (const confirmation of pending) {
+      try {
+        // Send confirmation asset
+        await sendUploadPhoto(chatId);
+        await sleep(1000);
+        
+        const result = await sendAsset(chatId, confirmation.asset);
+        
+        if (result && result.ok) {
+          console.log(`✅ Sent delayed confirmation to ${chatId}`);
+          
+          // Optionally send a message with the photo
+          await sendBurstReplies(users[chatId], chatId, "Look what I got! 💕 Thank you so much~");
+        }
+      } catch (error) {
+        console.error(`❌ Error sending confirmation to ${chatId}:`, error);
+      }
+    }
+  }
+}
+
+// Run this every 5 minutes
+setInterval(checkAndSendPendingConfirmations, 5 * 60 * 1000);
 
 /* ================== SERVER ================== */
 app.listen(port, () => {
