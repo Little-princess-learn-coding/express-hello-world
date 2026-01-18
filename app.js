@@ -10,6 +10,18 @@ import {
 
 import STAGE_5A_PROMPT from "./prompts/stage5A.content.js";
 const REPEATED_SALE_GUIDE = require("./prompts/repeated_sale.js");
+const {
+  buildAssetInstructions,
+  parseAssetMarkers,
+  getAssetToSend,
+  getPendingConfirmations,
+  scheduleConfirmation
+} = require('./assets/assetEngine.js');
+
+const {
+  sendAsset,
+  sendUploadPhoto
+} = require('./assets/telegramAssets.js');
 
 const imageCache = {};
 const app = express();
