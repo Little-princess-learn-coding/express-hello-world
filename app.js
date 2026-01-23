@@ -599,7 +599,7 @@ Sales philosophy:
 ${GIFT_REFERENCE}
 `;
 
-const FIRST_SALE_GUIDE = require("./1st.saleGuide");
+const FIRST_SALE_GUIDE = require("./prompts/1st.saleGuide.js");
 
 // BuildContextPrompt
 function buildContextPrompt(user, strategy, timeContext) {
