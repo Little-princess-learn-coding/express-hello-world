@@ -609,7 +609,6 @@ User profile (if known):
 - Age: ${user.memoryFacts?.age || "unknown"}
 - Location: ${user.memoryFacts?.location || "unknown"}
 - Job: ${user.memoryFacts?.job || "unknown"}
-- Preferred address: ${user.memoryFacts?.preferred_address || "unknown"}
 `;
 
   let context = `
