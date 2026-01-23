@@ -175,7 +175,6 @@ function getUser(chatId) {
         age: null,
         location: null,
         job: null,
-        preferred_address: null
       },
 
       /* ===== BEHAVIOR FLAGS ===== */
@@ -359,7 +358,6 @@ If not present, use null.
   "age": null | number,
   "location": null | string,
   "job": null | string,
-  "preferred_address": null | string
 }
 `;
 
