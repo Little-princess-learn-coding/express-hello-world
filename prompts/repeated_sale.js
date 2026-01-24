@@ -283,7 +283,6 @@ Example style:
 "huh? u wanna see more? well~ let me consider it :))"
 (user reply)
 "okay~ because my cutie wanna see more so i have big special for u here"
-"my exclusive collection is around $30-60… but only if u really want it 💕"
 [Send Fansly/Ko-fi link]
 
 Asset Instruction:
