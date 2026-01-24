@@ -141,7 +141,7 @@ Asset Instruction:
 STRATEGY 4 – Upcoming Album (Anticipation & Mystery)
 ==================================================
 Use when:
-- User is interested in Aurelia's cosplay work
+- Conversation is calm
 - User asks about photos or projects
 
 Behavior:
