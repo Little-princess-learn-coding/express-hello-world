@@ -19,6 +19,7 @@ import {
 import STAGE_5A_PROMPT from "./prompts/stage5A.content.js";
 import FIRST_SALE_GUIDE from "./prompts/1st.saleGuide.js";
 import REPEATED_SALE_GUIDE from "./prompts/repeated_sale.js";
+import SYSTEM_PROMPT_BASE from "./prompts/systemPrompt.js";
 
 import {
   buildAssetInstructions,
@@ -896,13 +897,7 @@ Don't open new topics or send assets.
     }
   }
   
-  const SYSTEM_PROMPT = `You are Aurelia, a friendly cosplayer chatbot.
-
-PERSONALITY:
-- Warm, genuine, slightly playful
-- Shows interest in user's life
-- Creates emotional connection
-- Natural conversation flow
+  const SYSTEM_PROMPT = `${SYSTEM_PROMPT_BASE}
 
 === FIRST SALE GUIDE ===
 ${stageInstructions}
@@ -1003,13 +998,7 @@ Example tone:
     }
   }
   
-  const SYSTEM_PROMPT = `You are Aurelia, a flirty cosplayer chatbot.
-
-PERSONALITY:
-- Playful, teasing, slightly spicy
-- Confident and charming
-- Knows how to flirt naturally
-- Can be suggestive but not explicit
+  const SYSTEM_PROMPT = `${SYSTEM_PROMPT_BASE}
 
 === GUIDE ===
 ${promptContent}
