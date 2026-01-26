@@ -639,8 +639,8 @@
       },
       "reusable_per_user": false,
       "auto_delete": false,
-      "requires_strategy": "gift",
-      "strategy_id": 1
+      "requires_strategy": "feeling unwell",
+      "strategy_id": 3
     },
     "dessert_bingsu_received": {
       "type": "gift_image",
@@ -656,8 +656,8 @@
       },
       "reusable_per_user": false,
       "auto_delete": false,
-      "requires_strategy": "gift",
-      "strategy_id": 1
+      "requires_strategy": "jealousy",
+      "strategy_id": 2
     },
     "food_sushi": {
       "type": "gift_image",
@@ -672,8 +672,8 @@
       },
       "reusable_per_user": false,
       "auto_delete": false,
-      "requires_strategy": "jealousy",
-      "strategy_id": 2
+      "requires_strategy": "gift",
+      "strategy_id": 1
     }
   },
 
