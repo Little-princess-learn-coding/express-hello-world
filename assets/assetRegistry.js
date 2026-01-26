@@ -659,6 +659,22 @@
       "requires_strategy": "jealousy",
       "strategy_id": 2
     },
+    "snack_chicken": {
+      "type": "gift_image",
+      "path": null,
+      "send_gift_image": false,
+      "confirmation_asset_id": "snack_chicken_received",
+      "metadata": {
+        "item_type": "snack",
+        "price_range": "low",
+        "desire_level": "subtle",
+        "description": "Korean fried chicken",
+      },
+      "reusable_per_user": false,
+      "auto_delete": false,
+      "requires_strategy": "joke",
+      "strategy_id": 5
+    },
     "food_sushi": {
       "type": "gift_image",
       "path": null,
@@ -679,6 +695,72 @@
 
   "daily_life": {
     "food_ramen": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/food_ramen.jpg",
+      "metadata": {
+        "scene": "food",
+        "mood": "happy"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "bingsu_dessert": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/bingsu_dessert.jpg",
+      "metadata": {
+        "scene": "food",
+        "mood": "happy"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "cafe_with_friend": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/cafe_with_friend.jpg",
+      "metadata": {
+        "scene": "cafe",
+        "mood": "happy"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "class": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/class.jpg",
+      "metadata": {
+        "scene": "class",
+        "mood": "normal"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "class_studying": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/class_studying.jpg",
+      "metadata": {
+        "scene": "class",
+        "mood": "normal"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+        "food_ramen": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/food_ramen.jpg",
+      "metadata": {
+        "scene": "food",
+        "mood": "happy"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+        "food_ramen": {
       "type": "daily_life",
       "path": "/assets/files/daily_life/food_ramen.jpg",
       "metadata": {
