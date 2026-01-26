@@ -699,6 +699,7 @@
       "path": "/assets/files/daily_life/food_ramen.jpg",
       "metadata": {
         "scene": "food",
+        "action": "eating",
         "mood": "happy"
       },
       "reusable_per_user": false,
@@ -710,6 +711,7 @@
       "path": "/assets/files/daily_life/bingsu_dessert.jpg",
       "metadata": {
         "scene": "food",
+        "action": "eating",
         "mood": "happy"
       },
       "reusable_per_user": false,
@@ -721,6 +723,7 @@
       "path": "/assets/files/daily_life/cafe_with_friend.jpg",
       "metadata": {
         "scene": "cafe",
+        "action": "hangout with friends",
         "mood": "happy"
       },
       "reusable_per_user": false,
@@ -732,6 +735,7 @@
       "path": "/assets/files/daily_life/class.jpg",
       "metadata": {
         "scene": "class",
+        "action": "studying",
         "mood": "normal"
       },
       "reusable_per_user": false,
@@ -743,29 +747,236 @@
       "path": "/assets/files/daily_life/class_studying.jpg",
       "metadata": {
         "scene": "class",
+        "action": "studying",
         "mood": "normal"
       },
       "reusable_per_user": false,
       "auto_delete": true,
       "allowed_states": ["casual", "supporter"]
     },
-        "food_ramen": {
+    "cooking": {
       "type": "daily_life",
-      "path": "/assets/files/daily_life/food_ramen.jpg",
+      "path": "/assets/files/daily_life/cooking.jpg",
       "metadata": {
-        "scene": "food",
+        "scene": "kitchen",
+        "actionn": "cooking",
+        "mood": "chill"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "dinner_cooking": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/dinner_cooking.jpg",
+      "metadata": {
+        "scene": "home",
+        "action": "dinner",
         "mood": "happy"
       },
       "reusable_per_user": false,
       "auto_delete": true,
       "allowed_states": ["casual", "supporter"]
     },
-        "food_ramen": {
+    "dinner_stickyrice": {
       "type": "daily_life",
-      "path": "/assets/files/daily_life/food_ramen.jpg",
+      "path": "/assets/files/daily_life/dinner_stickyrice.jpg",
+      "metadata": {
+        "scene": "home",
+        "action": "dinner",
+        "mood": "chill"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "dinner_with_friends": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/dinner_with_friends.jpg",
+      "metadata": {
+        "scene": "restaurant",
+        "action": "dinner",
+        "mood": "cheerful"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "eating_chips": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/eating_chips.jpg",
+      "metadata": {
+        "scene": "snack",
+        "action": "relax",
+        "mood": "chill"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "food_dimsum_and_milk": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/food_dimsum_and_milk.jpg",
+      "metadata": {
+        "scene": "snack",
+        "action": "relax",
+        "mood": "chill"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "food_dinner": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/food_dinner.jpg",
       "metadata": {
         "scene": "food",
+        "action": "dinner",
         "mood": "happy"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "food_eel_rice": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/food_eel_rice.jpg",
+      "metadata": {
+        "scene": "food",
+        "action": "eating",
+        "mood": "happy"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "food_lunch": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/food_lunch.jpg",
+      "metadata": {
+        "scene": "food",
+        "action": "lunch",
+        "mood": "chill"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "food_pancake": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/food_pancake.jpg",
+      "metadata": {
+        "scene": "food",
+        "action": "eating",
+        "mood": "happy"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "food_ramen_02": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/food_ramen_02.jpg",
+      "metadata": {
+        "scene": "food",
+        "action": "eating",
+        "mood": "chill"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "group_studying": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/group_studying.jpg",
+      "metadata": {
+        "scene": "cafe",
+        "action": "studying",
+        "mood": "hard-working"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "hangout_with_friend": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/hangout_with_friend.jpg",
+      "metadata": {
+        "scene": "food",
+        "action": "hangout",
+        "mood": "chill"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "karaoke_with_friend": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/karaoke_with_friend.jpg",
+      "metadata": {
+        "scene": "karaoke",
+        "action": "singing",
+        "mood": "cheerful"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "lunch_kimbad": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/lunch_kimbad.jpg",
+      "metadata": {
+        "scene": "food",
+        "action": "lunch",
+        "mood": "relax"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "lunch_noodle": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/lunch_noodle.jpg",
+      "metadata": {
+        "scene": "food",
+        "action": "lunch",
+        "mood": "happy"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "lunch_porridge": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/lunch_porridge.jpg",
+      "metadata": {
+        "scene": "food",
+        "action": "eating",
+        "mood": "chill"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "night_cafe_with_friends": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/night_cafe_with_friends.jpg",
+      "metadata": {
+        "scene": "cafe",
+        "action": "hangout",
+        "mood": "chill"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
+    "studying_in_class": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/studying_in_class.jpg",
+      "metadata": {
+        "scene": "class",
+        "action": "studying",
+        "mood": "chill"
       },
       "reusable_per_user": false,
       "auto_delete": true,
@@ -798,65 +1009,78 @@
       "requires_support": true,
       "send_delay_required": true
     },
-    "bag_blue_received": {
+    "nails_ribbon_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/files/confirmations/bag_blue_received.jpg",
-      "linked_gift_id": "bag_blue",
+      "path": "/assets/files/confirmations/nails_ribbon_received.jpg",
+      "linked_gift_id": "nails_ribbon",
       "metadata": {
         "delay_minutes": 10080,
-        "description": "Aurelia with blue bag - EXACT MATCH to bag_blue gift"
+        "description": "Aurelia showing pink nails - EXACT MATCH to nails_ribbon gift"
       },
       "reusable_per_user": false,
       "auto_delete": false,
       "requires_support": true,
       "send_delay_required": true
     },
-    "bag_pink_received": {
+    "bag_embroidered_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/files/confirmations/bag_pink_received.jpg",
-      "linked_gift_id": "bag_pink",
+      "path": "/assets/files/confirmations/bag_embroidered_received.jpg",
+      "linked_gift_id": "bag_embroidered",
       "metadata": {
         "delay_minutes": 10080,
-        "description": "Aurelia with pink bag - EXACT MATCH to bag_pink gift"
+        "description": "Aurelia with embroidered bag - EXACT MATCH to bag_embroidered gift"
       },
       "reusable_per_user": false,
-      "auto_delete": false,
+      "auto_delete": true,
       "requires_support": true,
       "send_delay_required": true
     },
-    "milktea_taro_received": {
+    "dessert_bingsu_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/files/confirmations/milktea_taro_received.jpg",
-      "linked_gift_id": "milktea_taro",
+      "path": "/assets/files/confirmations/dessert_bingsu_received.jpg",
+      "linked_gift_id": "dessert_bingsu",
       "metadata": {
         "delay_minutes": 15,
-        "description": "Aurelia drinking taro milktea - EXACT MATCH to milktea_taro gift"
+        "description": "Aurelia with dessert - EXACT MATCH to dessert_bingsu gift"
       },
       "reusable_per_user": false,
       "auto_delete": false,
       "requires_support": true,
       "send_delay_required": true
     },
-    "milktea_brown_sugar_received": {
+    "food_sushi_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/files/confirmations/milktea_brown_sugar_received.jpg",
-      "linked_gift_id": "milktea_brown_sugar",
+      "path": "/assets/files/confirmations/food_sushi_received.jpg",
+      "linked_gift_id": "food_sushi",
+      "metadata": {
+        "delay_minutes": 20,
+        "description": "Aurelia eating sushia - EXACT MATCH to food_sushi gift"
+      },
+      "reusable_per_user": false,
+      "auto_delete": false,
+      "requires_support": true,
+      "send_delay_required": true
+    },
+    "snack_chicken_received": {
+      "type": "post_support_confirmation",
+      "path": "/assets/files/confirmations/snack_chicken_received.jpg",
+      "linked_gift_id": "snack_chicken",
       "metadata": {
         "delay_minutes": 18,
-        "description": "Aurelia drinking brown sugar milktea - EXACT MATCH to milktea_brown_sugar gift"
+        "description": "Aurelia eating chicken - EXACT MATCH to snack_chicken gift"
       },
       "reusable_per_user": false,
       "auto_delete": false,
       "requires_support": true,
       "send_delay_required": true
     },
-    "snacks_received": {
+    "snack_applepie_received": {
       "type": "post_support_confirmation",
-      "path": "/assets/files/confirmations/snacks_received.jpg",
-      "linked_gift_id": "snacks_comfort",
+      "path": "/assets/files/confirmations/snack_applepie_received.jpg",
+      "linked_gift_id": "snack_applepie",
       "metadata": {
         "delay_minutes": 30,
-        "description": "Aurelia eating snacks - EXACT MATCH to snacks_comfort gift"
+        "description": "Aurelia eating apple pie - EXACT MATCH to snack_applepie gift"
       },
       "reusable_per_user": false,
       "auto_delete": false,
