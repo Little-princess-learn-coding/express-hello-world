@@ -31,8 +31,15 @@ import {
 
 import {
   sendAsset,
-  sendUploadPhoto
+  sendUploadPhoto,
+  sendPhoto
 } from './assets/telegramAssets.js';
+
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const imageCache = {};
 const app = express();
@@ -666,6 +673,17 @@ function getUser(chatId) {
       wind_down: false,
       wind_down_messages_sent: 0,
 
+      // AUTO-GREETING (first contact)
+      awaiting_first_message: false,
+      greeting_timeout: null,
+      start_timestamp: null,
+      
+      // FIRST REPLY QUEUE (5-minute delay)
+      first_reply_pending: false,
+      first_reply_scheduled_at: null,
+      queued_messages: [],
+      location_mentioned_in_queue: false,
+
       // SALE FLAGS
       sale_clarification_pending: false,
    
@@ -691,6 +709,8 @@ function getUser(chatId) {
       has_seen_content: false,
       emotional_ready: false,
       has_asked_support: false,
+      start_greeting_scheduled: false,  // Track if scheduled first greeting
+      start_greeting_sent: false,       // Track if already sent first greeting
       
       // STAGE TRACKING
       stages: {
@@ -837,6 +857,20 @@ Examples:
     console.error("Fact extraction failed:", error);
     return {};
   }
+}
+
+function mentionsLocation(text) {
+  // Check for location introduction patterns
+  const patterns = [
+    /i'?m from\s+([a-z]+)/i,
+    /from\s+(vietnam|hanoi|saigon|da\s*nang|ho\s*chi\s*minh|usa|america|uk|london|tokyo|etc)/i,
+    /live\s+in\s+([a-z]+)/i,
+    /living\s+in\s+([a-z]+)/i,
+    /based\s+in\s+([a-z]+)/i,
+    /in\s+(vietnam|hanoi|saigon|da\s*nang)/i
+  ];
+  
+  return patterns.some(pattern => pattern.test(text));
 }
 
 /* ================== PROMPT BUILDERS ================== */
@@ -1048,6 +1082,151 @@ app.post("/webhook", async (req, res) => {
   const text = message.text;
   const user = getUser(chatId);
 
+  /* ========= HANDLE /start COMMAND ========= */
+  if (text === "/start") {
+    console.log(`🚀 User ${chatId} sent /start command`);
+    
+    // Initialize first reply delay (5 minutes)
+    if (!user.first_reply_pending && !user.start_greeting_sent) {
+      user.first_reply_pending = true;
+      user.first_reply_scheduled_at = Date.now() + (5 * 60 * 1000);
+      user.queued_messages = [];
+      user.location_mentioned_in_queue = false;
+      user.start_timestamp = Date.now();
+      
+      console.log(`⏰ First reply scheduled in 5 minutes`);
+      
+      // Schedule greeting
+      user.greeting_timeout = setTimeout(async () => {
+        console.log(`\n👋 === SENDING FIRST GREETING TO ${chatId} ===`);
+        
+        try {
+          // Send meme
+          await sendUploadPhoto(chatId);
+          await sleep(800);
+          
+          const memePath = path.join(__dirname, 'assets/files/meme/confused_questioning.jpg');
+          await sendPhoto(chatId, memePath, { spoiler: false });
+          
+          await sleep(2000);
+          
+          // Send "Hi"
+          await sendTyping(chatId);
+          await sleep(1500);
+          await fetch(
+            `https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: "Hi"
+              })
+            }
+          );
+          
+          await sleep(1000);
+          
+          // Check if location was mentioned in queue
+          if (user.location_mentioned_in_queue && user.memoryFacts.location) {
+            console.log(`✅ Location mentioned in queue: ${user.memoryFacts.location}`);
+            
+            // Contextual response about their location
+            await sendTyping(chatId);
+            await sleep(1200);
+            
+            const locationResponse = `oh ${user.memoryFacts.location}! what city?`;
+            
+            await fetch(
+              `https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  chat_id: chatId,
+                  text: locationResponse
+                })
+              }
+            );
+            
+          } else {
+            console.log(`❓ No location mentioned - asking`);
+            
+            // Ask for location
+            await sendTyping(chatId);
+            await sleep(1200);
+            
+            await fetch(
+              `https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  chat_id: chatId,
+                  text: "where r u from?"
+                })
+              }
+            );
+          }
+          
+          // Mark greeting sent
+          user.start_greeting_sent = true;
+          user.first_reply_pending = false;
+          user.firstReplySent = true;
+          user.greeting_timeout = null;
+          
+          console.log(`✅ First greeting complete`);
+          console.log(`📝 Queued messages: ${user.queued_messages.length}`);
+          
+          // Now process queued messages (if any)
+          if (user.queued_messages.length > 0) {
+            console.log(`\n🔄 Processing ${user.queued_messages.length} queued messages...`);
+            
+            // Process the most recent 3 messages to avoid spam
+            const messagesToProcess = user.queued_messages.slice(-3);
+            
+            for (const queuedMsg of messagesToProcess) {
+              console.log(`   Processing: "${queuedMsg}"`);
+              // These will be processed in subsequent webhook calls
+              // For now, just log them
+            }
+            
+            user.queued_messages = [];
+          }
+          
+        } catch (error) {
+          console.error(`❌ Error sending first greeting:`, error);
+        }
+      }, 5 * 60 * 1000); // 5 minutes
+    }
+    
+    return res.sendStatus(200);
+  }
+  
+  /* ========= QUEUE MESSAGES DURING FIRST REPLY DELAY ========= */
+  if (user.first_reply_pending) {
+    console.log(`📥 Queuing message from ${chatId} (waiting for first reply)`);
+    
+    // Queue the message
+    user.queued_messages.push(text);
+    
+    // Check if mentions location
+    if (mentionsLocation(text)) {
+      console.log(`📍 Location mention detected in queue`);
+      user.location_mentioned_in_queue = true;
+      
+      // Extract and save location
+      const extractedFacts = await extractUserFacts(text);
+      if (extractedFacts.location) {
+        user.memoryFacts.location = extractedFacts.location;
+        console.log(`   Saved location: ${extractedFacts.location}`);
+      }
+    }
+    
+    // Don't reply yet - waiting for 5 minutes
+    return res.sendStatus(200);
+  }
+
   // ✅ BLOCK TIME WASTERS
   if (isTimeWaster(user.state)) {
     console.log(`⛔ Ignoring message from time waster: ${chatId}`);
@@ -1193,6 +1372,13 @@ app.post("/webhook", async (req, res) => {
           },
         });
         console.log(`💾 Saved facts for ${chatId}:`, newFacts);
+        
+        // ========= CANCEL SCHEDULED GREETING IF USER ALREADY INTRODUCED =========
+        // If user mentioned location, they've already introduced themselves
+        if (newFacts.location && user.start_greeting_scheduled && !user.start_greeting_sent) {
+          console.log(`🚫 User introduced location - canceling scheduled greeting`);
+          user.start_greeting_sent = true; // Mark as sent to prevent scheduled greeting
+        }
       }
     }
   } catch (e) {
