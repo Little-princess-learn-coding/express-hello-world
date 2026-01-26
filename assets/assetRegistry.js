@@ -591,33 +591,33 @@
       "requires_strategy": "gift",
       "strategy_id": 1
     },
-    "bag_blue": {
+    "bag_embroidered": {
       "type": "gift_image",
-      "path": "/assets/files/gifts/bag_blue.jpg",
+      "path": "/assets/files/gifts/bag_embroidered.jpg",
       "send_gift_image": true,
-      "confirmation_asset_id": "bag_blue_received",
+      "confirmation_asset_id": "bag_embroidered_received",
       "metadata": {
         "item_type": "bag",
         "price_range": "high",
         "desire_level": "strong",
-        "description": "Blue cute bag",
-        "color": "blue"
+        "description": "cute embroidered bag",
+        "color": "white"
       },
       "reusable_per_user": false,
       "auto_delete": false,
       "requires_strategy": "gift",
       "strategy_id": 1
     },
-    "bag_pink": {
+    "nails_ribbon": {
       "type": "gift_image",
-      "path": "/assets/files/gifts/bag_pink.jpg",
+      "path": "/assets/files/gifts/nails_ribbon.jpg",
       "send_gift_image": true,
-      "confirmation_asset_id": "bag_pink_received",
+      "confirmation_asset_id": "nails_ribbon_received",
       "metadata": {
-        "item_type": "bag",
-        "price_range": "high",
+        "item_type": "nails",
+        "price_range": "low",
         "desire_level": "strong",
-        "description": "Pink luxury bag",
+        "description": "cute nails with ribbon decoration",
         "color": "pink"
       },
       "reusable_per_user": false,
@@ -625,50 +625,50 @@
       "requires_strategy": "gift",
       "strategy_id": 1
     },
-    "milktea_taro": {
+    "snack_applepie": {
       "type": "gift_image",
       "path": null,
       "send_gift_image": false,
-      "confirmation_asset_id": "milktea_taro_received",
+      "confirmation_asset_id": "snack_applepie_received",
       "metadata": {
-        "item_type": "drink",
-        "price_range": "low",
+        "item_type": "snack",
+        "price_range": "medium",
         "desire_level": "subtle",
-        "description": "Taro milktea",
-        "flavor": "taro"
+        "description": "apple pie",
+        "flavor": "apple"
       },
       "reusable_per_user": false,
       "auto_delete": false,
       "requires_strategy": "gift",
       "strategy_id": 1
     },
-    "milktea_brown_sugar": {
+    "dessert_bingsu_received": {
       "type": "gift_image",
       "path": null,
       "send_gift_image": false,
-      "confirmation_asset_id": "milktea_brown_sugar_received",
+      "confirmation_asset_id": "dessert_bingsu_received",
       "metadata": {
-        "item_type": "drink",
+        "item_type": "dessert",
         "price_range": "low",
         "desire_level": "subtle",
-        "description": "Brown sugar milktea",
-        "flavor": "brown_sugar"
+        "description": "mango bingsu dessert",
+        "flavor": "mango"
       },
       "reusable_per_user": false,
       "auto_delete": false,
       "requires_strategy": "gift",
       "strategy_id": 1
     },
-    "snacks_comfort": {
+    "food_sushi": {
       "type": "gift_image",
       "path": null,
       "send_gift_image": false,
-      "confirmation_asset_id": "snacks_received",
+      "confirmation_asset_id": "food_sushi_received",
       "metadata": {
         "item_type": "food",
         "price_range": "low",
         "desire_level": "subtle",
-        "description": "Comfort snacks"
+        "description": "sushi, japanese food"
       },
       "reusable_per_user": false,
       "auto_delete": false,
