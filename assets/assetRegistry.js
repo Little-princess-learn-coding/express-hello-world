@@ -13,6 +13,370 @@
       "auto_delete": false,
       "sale_sensitive": false
     },
+    "ahhh_playful": {
+      "type": "meme",
+      "path": "/assets/files/meme/ahhh_playful.jpg",
+      "metadata": {
+        "emotion": "playful",
+        "intensity": "high",
+        "tone": "cute",
+        "context": "reply_playful"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "angry": {
+      "type": "meme",
+      "path": "/assets/files/meme/angry.jpg",
+      "metadata": {
+        "emotion": "angry",
+        "intensity": "medium",
+        "tone": "angry",
+        "context": "reply_angry"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "annoyed": {
+      "type": "meme",
+      "path": "/assets/files/meme/annoyed.jpg",
+      "metadata": {
+        "emotion": "annoyed",
+        "intensity": "high",
+        "tone": "annoyed",
+        "context": "reply_angry"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "ashamed": {
+      "type": "meme",
+      "path": "/assets/files/meme/ashamed.jpg",
+      "metadata": {
+        "emotion": "ashamed",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_shy"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "bored": {
+      "type": "meme",
+      "path": "/assets/files/meme/bored.jpg",
+      "metadata": {
+        "emotion": "bored",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_bored"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "confident": {
+      "type": "meme",
+      "path": "/assets/files/meme/confident.jpg",
+      "metadata": {
+        "emotion": "flirt",
+        "intensity": "medium",
+        "tone": "playful",
+        "context": "reply_flirt"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "confused_questioning": {
+      "type": "meme",
+      "path": "/assets/files/meme/confused_questioning.jpg",
+      "metadata": {
+        "emotion": "confused",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_confused"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "confused_speechless": {
+      "type": "meme",
+      "path": "/assets/files/meme/confused_speechless.jpg",
+      "metadata": {
+        "emotion": "confused",
+        "intensity": "medium",
+        "tone": "funny",
+        "context": "reply_confused"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "cry_loudly": {
+      "type": "meme",
+      "path": "/assets/files/meme/cry_loudly.jpg",
+      "metadata": {
+        "emotion": "sad",
+        "intensity": "high",
+        "tone": "dramatic",
+        "context": "reply_sad"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "cry_softly": {
+      "type": "meme",
+      "path": "/assets/files/meme/cry_softly.jpg",
+      "metadata": {
+        "emotion": "sad",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_sad"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "delight_smile": {
+      "type": "meme",
+      "path": "/assets/files/meme/delight_smile.jpg",
+      "metadata": {
+        "emotion": "happy",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_fun"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "disappointed": {
+      "type": "meme",
+      "path": "/assets/files/meme/disappointed.jpg",
+      "metadata": {
+        "emotion": "disappointed",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_sad"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "disgusting": {
+      "type": "meme",
+      "path": "/assets/files/meme/disgusting.jpg",
+      "metadata": {
+        "emotion": "disgusting",
+        "intensity": "high",
+        "tone": "angry",
+        "context": "reply_angry"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "excited": {
+      "type": "meme",
+      "path": "/assets/files/meme/excited.jpg",
+      "metadata": {
+        "emotion": "excited",
+        "intensity": "high",
+        "tone": "playful",
+        "context": "reply_fun"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "flirty_teasing": {
+      "type": "meme",
+      "path": "/assets/files/meme/flirty_teasing.jpg",
+      "metadata": {
+        "emotion": "flirty",
+        "intensity": "high",
+        "tone": "teasing",
+        "context": "reply_tease"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "funny_confuse": {
+      "type": "meme",
+      "path": "/assets/files/meme/funny_confuse.jpg",
+      "metadata": {
+        "emotion": "confused",
+        "intensity": "medium",
+        "tone": "playful",
+        "context": "reply_confused"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "gloomy": {
+      "type": "meme",
+      "path": "/assets/files/meme/gloomy.jpg",
+      "metadata": {
+        "emotion": "upset",
+        "intensity": "high",
+        "tone": "upset",
+        "context": "reply_upset"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "hold_back_tear": {
+      "type": "meme",
+      "path": "/assets/files/meme/hold_back_tear.jpg",
+      "metadata": {
+        "emotion": "upset",
+        "intensity": "medium",
+        "tone": "playful",
+        "context": "reply_playful"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "horny": {
+      "type": "meme",
+      "path": "/assets/files/meme/horny.jpg",
+      "metadata": {
+        "emotion": "horny",
+        "intensity": "high",
+        "tone": "flirty",
+        "context": "reply_flirt"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "mad": {
+      "type": "meme",
+      "path": "/assets/files/meme/mad.jpg",
+      "metadata": {
+        "emotion": "angry",
+        "intensity": "high",
+        "tone": "dramatic",
+        "context": "reply_angry"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "nonchalant": {
+      "type": "meme",
+      "path": "/assets/files/meme/nonchalant.jpg",
+      "metadata": {
+        "emotion": "nonchalant",
+        "intensity": "medium",
+        "tone": "nonchalant",
+        "context": "reply_upset"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "possessive_teasing": {
+      "type": "meme",
+      "path": "/assets/files/meme/possessive_teasing.jpg",
+      "metadata": {
+        "emotion": "playful",
+        "intensity": "high",
+        "tone": "naughty",
+        "context": "reply_tease"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "pouty": {
+      "type": "meme",
+      "path": "/assets/files/meme/pouty.jpg",
+      "metadata": {
+        "emotion": "upset",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_upset"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "sad": {
+      "type": "meme",
+      "path": "/assets/files/meme/sad.jpg",
+      "metadata": {
+        "emotion": "sad",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_upset"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "sad_cry": {
+      "type": "meme",
+      "path": "/assets/files/meme/sad_cry.jpg",
+      "metadata": {
+        "emotion": "sad",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_sad"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "sad_tear": {
+      "type": "meme",
+      "path": "/assets/files/meme/sad_tear.jpg",
+      "metadata": {
+        "emotion": "sad",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_sad"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "shy_ashamed": {
+      "type": "meme",
+      "path": "/assets/files/meme/shy_ashamed.jpg",
+      "metadata": {
+        "emotion": "shy",
+        "intensity": "high",
+        "tone": "cute",
+        "context": "reply_shy"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "shy_blush": {
+      "type": "meme",
+      "path": "/assets/files/meme/shy_blush.jpg",
+      "metadata": {
+        "emotion": "shy",
+        "intensity": "high",
+        "tone": "cute",
+        "context": "reply_flirt"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
     "shy_flustered": {
       "type": "meme",
       "path": "/assets/files/meme/shy_flustered.jpg",
@@ -20,6 +384,123 @@
         "emotion": "shy",
         "intensity": "high",
         "tone": "cute",
+        "context": "reply_flirt"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "skeptical": {
+      "type": "meme",
+      "path": "/assets/files/meme/skeptical.jpg",
+      "metadata": {
+        "emotion": "doubting",
+        "intensity": "high",
+        "tone": "playful",
+        "context": "reply_playful"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "sniffle": {
+      "type": "meme",
+      "path": "/assets/files/meme/sniffle.jpg",
+      "metadata": {
+        "emotion": "sad",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_sad"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "speechless_upset": {
+      "type": "meme",
+      "path": "/assets/files/meme/speechless_upset.jpg",
+      "metadata": {
+        "emotion": "upset",
+        "intensity": "medium",
+        "tone": "nonchalant",
+        "context": "reply_playful"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "shy_flustered": {
+      "type": "meme",
+      "path": "/assets/files/meme/shy_flustered.jpg",
+      "metadata": {
+        "emotion": "shy",
+        "intensity": "high",
+        "tone": "cute",
+        "context": "reply_flirt"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "sulking": {
+      "type": "meme",
+      "path": "/assets/files/meme/sulking.jpg",
+      "metadata": {
+        "emotion": "upset",
+        "intensity": "high",
+        "tone": "cute",
+        "context": "reply_upset"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "suspecting": {
+      "type": "meme",
+      "path": "/assets/files/meme/suspecting.jpg",
+      "metadata": {
+        "emotion": "doubting",
+        "intensity": "high",
+        "tone": "playful",
+        "context": "reply_playful"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "tear_up": {
+      "type": "meme",
+      "path": "/assets/files/meme/tear_up.jpg",
+      "metadata": {
+        "emotion": "sad",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_sad"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "thank_you_happy": {
+      "type": "meme",
+      "path": "/assets/files/meme/thank_you_happy.jpg",
+      "metadata": {
+        "emotion": "happy",
+        "intensity": "high",
+        "tone": "cute",
+        "context": "reply_happy"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "threaten": {
+      "type": "meme",
+      "path": "/assets/files/meme/threaten.jpg",
+      "metadata": {
+        "emotion": "threaten",
+        "intensity": "high",
+        "tone": "dramatic",
         "context": "reply_flirt"
       },
       "reusable": "unlimited",
@@ -52,14 +533,40 @@
       "auto_delete": false,
       "sale_sensitive": false
     },
-    "excited_happy": {
+    "tired": {
       "type": "meme",
-      "path": "/assets/files/meme/excited_happy.jpg",
+      "path": "/assets/files/meme/tired.jpg",
+      "metadata": {
+        "emotion": "tired",
+        "intensity": "high",
+        "tone": "tired",
+        "context": "reply_tired"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "upset": {
+      "type": "meme",
+      "path": "/assets/files/meme/upset.jpg",
+      "metadata": {
+        "emotion": "upset",
+        "intensity": "medium",
+        "tone": "cute",
+        "context": "reply_upset"
+      },
+      "reusable": "unlimited",
+      "auto_delete": false,
+      "sale_sensitive": false
+    },
+    "thumb_praise": {
+      "type": "meme",
+      "path": "/assets/files/meme/thumb_praise.jpg",
       "metadata": {
         "emotion": "excited",
         "intensity": "high",
         "tone": "cute",
-        "context": "reply_flirt"
+        "context": "reply_playful"
       },
       "reusable": "unlimited",
       "auto_delete": false,
