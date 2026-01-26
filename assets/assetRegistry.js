@@ -1,13 +1,13 @@
 {
   "memes": {
-    "happy_cute": {
+    "happy": {
       "type": "meme",
-      "path": "/assets/files/meme/happy_cute.jpg",
+      "path": "/assets/files/meme/happy.jpg",
       "metadata": {
         "emotion": "happy",
         "intensity": "medium",
         "tone": "cute",
-        "context": "reply_flirt"
+        "context": "reply_fun"
       },
       "reusable": "unlimited",
       "auto_delete": false,
