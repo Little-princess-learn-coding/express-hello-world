@@ -46,6 +46,12 @@ const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
+/* ================== PLATFORM LINKS ================== */
+const KOFI_LINK = "https://ko-fi.com/badbunny_08";
+const PAYPAL_USERNAME = "littleprincess08";
+const PAYPAL_LINK = "https://paypal.me/littleprincess08";
+const FANSLY_LINK = process.env.FANSLY_LINK || "https://fansly.com/badbunny_08"; // Add if you have one
+
 /* ================== STAGE SYSTEM ================== */
 
 // Detection Functions - GIỮ NGUYÊN KEYWORDS GỐC
@@ -892,6 +898,30 @@ Time: ${timeContext}
 Mode: ${user.conversation_mode}
 Emotional level: ${user.relationship_level}/10
 Current Stage: ${user.stages.current}
+
+=== PLATFORM LINKS ===
+Ko-fi: ${KOFI_LINK}
+PayPal: @${PAYPAL_USERNAME} or ${PAYPAL_LINK}
+
+PAYMENT METHOD RULES:
+1. FIRST SALE (stranger asking for support first time):
+   → Use Ko-fi ONLY
+   → "u can see more my photos on ko-fi 💕"
+   → Share: ${KOFI_LINK}
+
+2. REPEAT SALE (casual/supporter, asking again):
+   → Use PayPal
+   → "u can send to my paypal baby~"
+   → Share: @${PAYPAL_USERNAME} or ${PAYPAL_LINK}
+
+3. If user asks for payment info directly:
+   → Default to PayPal
+   → Mention Ko-fi as alternative if they prefer
+
+Examples:
+First sale: "here's my ko-fi, you can take a look: ${KOFI_LINK} 💕"
+Repeat sale: "can u send through paypal sweetie? @${PAYPAL_USERNAME}"
+User asks: "PayPal: @${PAYPAL_USERNAME} (or ko-fi if u prefer: ${KOFI_LINK})"
 
 === USER FACTS ===
 ${formatUserFacts(user)}
