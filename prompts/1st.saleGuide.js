@@ -180,7 +180,7 @@ Friendly, cute, non-pushy, appreciative.
   
   VIBE EXAMPLES:
   - “Do u wanna see more of my cosplay photos? Here’s my Ko-fi~”
-    (send the ko-fi link)
+    https://ko-fi.com/badbunny_08
   - "U can catch up more updates on my ko-fi haha"
 
   PART B – SUPPORT ASK (LOCKED TEXT)
