@@ -706,6 +706,18 @@
       "auto_delete": true,
       "allowed_states": ["casual", "supporter"]
     },
+    "uni_selfie": {
+      "type": "daily_life",
+      "path": "/assets/files/daily_life/uni_selfie.jpg",
+      "metadata": {
+        "scene": "school",
+        "action": "selfie",
+        "mood": "happy"
+      },
+      "reusable_per_user": false,
+      "auto_delete": true,
+      "allowed_states": ["casual", "supporter"]
+    },
     "bingsu_dessert": {
       "type": "daily_life",
       "path": "/assets/files/daily_life/bingsu_dessert.jpg",
