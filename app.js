@@ -39,8 +39,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 // ================== MONITORING SYSTEM ==================
-import { logUserMessage, logBotMessage, handleAdminMessage } from './monitoringSystem.js';
-import { isWaitingAdmin } from './monitoringDb.js';
+import { logUserMessage, logBotMessage, handleAdminMessage } from './user_monitoring/monitoringSystem.js';
+import { isWaitingAdmin } from './user_monitoring/monitoringDb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
