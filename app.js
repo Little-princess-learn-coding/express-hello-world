@@ -38,6 +38,10 @@ import {
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// ================== MONITORING SYSTEM ==================
+import { logUserMessage, logBotMessage, handleAdminMessage } from './monitoringSystem.js';
+import { isWaitingAdmin } from './monitoringDb.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -1110,6 +1114,51 @@ app.post("/webhook", async (req, res) => {
 
   const chatId = message.chat.id;
   const text = message.text;
+
+  // ========= MONITORING: Admin intervention check =========
+  // Nếu admin đang reply trong topic → gửi cho user, không cần bot xử lý
+  const adminAction = await handleAdminMessage(message);
+  if (adminAction) {
+    console.log(`👨‍💼 Admin action in topic:`, adminAction);
+    return res.sendStatus(200);
+  }
+
+  // ========= MONITORING: Log user message + keyword check =========
+  // Skip monitoring cho /start (chỉ monitor tin nhắm thường)
+  if (text !== "/start") {
+    const monitorResult = await logUserMessage(
+      message.from.id,
+      message.from.username,
+      message.from.first_name,
+      text
+    );
+
+    // Nếu phát hiện keyword nguy hiểm → dừng bot, chờ admin
+    if (monitorResult.needsIntervention) {
+      console.log(`🚨 Keyword detected [${monitorResult.keywords.join(', ')}] - pausing bot`);
+
+      // Reply nhẹ nhàng cho user
+      await fetch(
+        `https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: "i'll get back to you in a sec~ 💕"
+          })
+        }
+      );
+      return res.sendStatus(200);
+    }
+
+    // Nếu đang chờ admin trả lời → bot không tự reply
+    if (isWaitingAdmin(message.from.id)) {
+      console.log(`⏸️  User ${chatId} waiting for admin - bot paused`);
+      return res.sendStatus(200);
+    }
+  }
+
   const user = getUser(chatId);
 
   /* ========= HANDLE /start COMMAND ========= */
@@ -1597,6 +1646,9 @@ app.post("/webhook", async (req, res) => {
 
   /* ========= SEND MESSAGE ========= */
   await sendBurstReplies(user, chatId, cleanReplyText);
+
+  // ========= MONITORING: Log bot reply vào topic =========
+  await logBotMessage(message.from.id, cleanReplyText);
 
   // Send asset if present (block during wind-down unless selling)
   if (assetMarkers.hasAsset && 
