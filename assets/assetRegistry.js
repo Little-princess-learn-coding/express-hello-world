@@ -1104,7 +1104,7 @@
   "exclusive_selfies": {
     "reward_1": {
       "type": "exclusive_selfie",
-      "path": "/assets/files/tease_selfie/exclusive_1.jpg",
+      "path": "/assets/files/tease_selfie/exclusive_1.png",
       "metadata": {
         "exclusivity_level": "high",
         "tease_level": "medium"
@@ -1117,14 +1117,14 @@
     },
     "reward_2": {
       "type": "exclusive_selfie",
-      "path": "/assets/files/tease_selfie/exclusive_2.jpg",
+      "path": "/assets/files/tease_selfie/exclusive_2.png",
       "metadata": {
         "exclusivity_level": "high",
         "tease_level": "high"
       },
       "reusable_per_user": false,
       "auto_delete": true,
-      "ttl": 20,
+      "ttl": 25,
       "requires_support": true,
       "strategy_id": 5
     }
