@@ -585,41 +585,43 @@ async function callOpenAI(systemPrompt, userMessage) {
   return data.choices[0].message.content;
 }
 
-/* ================== INTENT CLASSIFIER WITH OPENAI ================== */
-async function detectIntent(user, userMessage, recentMessages) {
+/* ================== COMBINED CLASSIFIER (Intent + Facts) ================== */
+// ✅ Gộp extractUserFacts + detectIntent thành 1 API call duy nhất
+async function classifyMessageAndExtractFacts(user, userMessage, recentMessages) {
   const conversationContext = recentMessages.slice(-6).join("\n");
-  
-  const systemPrompt = `You are an intent classifier for a cosplayer chatbot named Aurelia.
 
-Your job is to analyze the user's message and classify it into categories.
+  const systemPrompt = `You are an analyzer for a cosplayer chatbot named Aurelia.
 
-CLASSIFICATION RULES:
-1. intent: "flirt" | "normal"
-   - "flirt" = user is being romantic, sexual, flirty, or spicy
-   - "normal" = general conversation
+Analyze the user message and return TWO things in ONE JSON response:
 
-2. mood: "positive" | "neutral" | "negative"
-   - positive = happy, excited, supportive
-   - neutral = casual, information-seeking
-   - negative = upset, angry, frustrated
+1. INTENT CLASSIFICATION:
+- intent: "flirt" | "normal"
+  - "flirt" = user is romantic, sexual, flirty, or spicy
+  - "normal" = general conversation
+- mood: "positive" | "neutral" | "negative"
+  - positive = happy, excited, supportive
+  - neutral = casual, information-seeking
+  - negative = upset, angry, frustrated
+- saleResponse: "yes" | "no" | "maybe" | "none"
+  - Only set if Aurelia recently asked for support/purchase
+  - "none" = not responding to a sale request
+- windDown: true | false
+  - true = user is ending conversation (bye, gotta go, talk later)
+  - false = continuing conversation
 
-3. saleResponse: "yes" | "no" | "maybe" | "none"
-   - Only set if Aurelia recently asked for support/purchase
-   - "yes" = user agrees to support/buy
-   - "no" = user declines
-   - "maybe" = user is considering
-   - "none" = not responding to a sale request
+2. PERSONAL FACTS EXTRACTION:
+- facts: object with fields: name, age, location, job
+  - Only include fields that are clearly mentioned
+  - location: city/country only, NOT specific address
+  - Return empty object {} if nothing found
 
-4. windDown: true | false
-   - true = user is ending conversation (bye, gotta go, talk later, etc.)
-   - false = continuing conversation
-
-Respond ONLY in this JSON format:
+Respond ONLY in this exact JSON format (no extra text):
 {
   "intent": "flirt" or "normal",
   "mood": "positive" or "neutral" or "negative",
   "saleResponse": "yes" or "no" or "maybe" or "none",
-  "windDown": true or false
+  "windDown": true or false,
+  "facts": {}
 }`;
 
   const userPrompt = `Recent conversation:
@@ -631,28 +633,36 @@ Aurelia's sale status:
 - Has asked for support recently: ${user.has_asked_support}
 - User is in "${user.conversation_mode}" mode
 
-Classify this message.`;
+Analyze this message.`;
 
   try {
     const response = await callOpenAI(systemPrompt, userPrompt);
-    
+
     const cleanResponse = response
       .replace(/```json\n?/g, '')
       .replace(/```\n?/g, '')
       .trim();
-    
-    const intentData = JSON.parse(cleanResponse);
-    
-    if (!intentData.intent || !intentData.mood || !intentData.saleResponse) {
-      console.error("Invalid intent response structure:", intentData);
-      return getDefaultIntent();
+
+    const result = JSON.parse(cleanResponse);
+
+    if (!result.intent || !result.mood || !result.saleResponse) {
+      console.error("Invalid classify response:", result);
+      return { intent: getDefaultIntent(), facts: {} };
     }
-    
-    return intentData;
-    
+
+    return {
+      intent: {
+        intent: result.intent,
+        mood: result.mood,
+        saleResponse: result.saleResponse,
+        windDown: result.windDown || false
+      },
+      facts: result.facts || {}
+    };
+
   } catch (error) {
-    console.error("Intent detection failed:", error);
-    return getDefaultIntent();
+    console.error("Combined classification failed:", error);
+    return { intent: getDefaultIntent(), facts: {} };
   }
 }
 
@@ -667,6 +677,12 @@ function getDefaultIntent() {
 
 /* ================== USER STATE ================== */
 const users = {};
+
+// ✅ Chống duplicate webhook (Telegram retry)
+const processingMessages = new Set();
+
+// ✅ Track user đang chờ bot reply xong chưa (tránh spam)
+const userBotReplying = new Set();
 
 function getUser(chatId) {
   if (!users[chatId]) {
@@ -823,10 +839,22 @@ function splitIntoBursts(text) {
 async function sendBurstReplies(user, chatId, text) {
   const parts = splitIntoBursts(text);
 
-  for (let i = 0; i < parts.length; i++) {
+  // ✅ Giới hạn tối đa 3 tin nhắn mỗi lần reply
+  let limitedParts;
+  if (parts.length <= 3) {
+    limitedParts = parts;
+  } else {
+    limitedParts = [
+      parts[0],
+      parts[1],
+      parts.slice(2).join(' ')
+    ];
+  }
+
+  for (let i = 0; i < limitedParts.length; i++) {
     await sendTyping(chatId);
 
-    const delay = calculateDelay(user, parts[i]);
+    const delay = calculateDelay(user, limitedParts[i]);
     await sleep(delay);
 
     await fetch(
@@ -836,38 +864,14 @@ async function sendBurstReplies(user, chatId, text) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          text: parts[i],
+          text: limitedParts[i],
         }),
       }
     );
   }
 }
 
-// Extract user facts from message
-async function extractUserFacts(text) {
-  const systemPrompt = `Extract personal information from user message.
-Return JSON with only these fields if found: name, age, location, job.
-If field not found, omit it. Return {} if nothing found.
-
-IMPORTANT:
-- location: General location only (city, country), NOT specific address
-- Ask "where are you from?" NOT "what's your address?"
-
-Examples:
-"My name is John, I'm 25" → {"name": "John", "age": "25"}
-"I'm from Vietnam" → {"location": "Vietnam"}
-"I live in Hanoi" → {"location": "Hanoi"}
-"I'm a software engineer" → {"job": "software engineer"}`;
-
-  try {
-    const response = await callOpenAI(systemPrompt, text);
-    const cleanResponse = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(cleanResponse);
-  } catch (error) {
-    console.error("Fact extraction failed:", error);
-    return {};
-  }
-}
+// extractUserFacts removed - merged into classifyMessageAndExtractFacts
 
 function mentionsLocation(text) {
   // Check for location introduction patterns
@@ -1115,6 +1119,21 @@ app.post("/webhook", async (req, res) => {
   const chatId = message.chat.id;
   const text = message.text;
 
+  // ✅ Fix 1: Chống duplicate webhook (Telegram retry)
+  const messageKey = `${chatId}_${message.message_id}`;
+  if (processingMessages.has(messageKey)) {
+    console.log(`⚠️ Duplicate webhook ignored: ${messageKey}`);
+    return res.sendStatus(200);
+  }
+  processingMessages.add(messageKey);
+  setTimeout(() => processingMessages.delete(messageKey), 30000);
+
+  // ✅ Fix 2: Nếu bot đang reply cho user này → bỏ qua tin mới, chờ xong
+  if (userBotReplying.has(chatId)) {
+    console.log(`⏸️ Bot đang reply cho ${chatId} → bỏ qua tin nhắn mới`);
+    return res.sendStatus(200);
+  }
+
   // ========= MONITORING: Admin intervention check =========
   // Nếu admin đang reply trong topic → gửi cho user, không cần bot xử lý
   const adminAction = await handleAdminMessage(message);
@@ -1294,11 +1313,11 @@ app.post("/webhook", async (req, res) => {
       console.log(`📍 Location mention detected in queue`);
       user.location_mentioned_in_queue = true;
       
-      // Extract and save location
-      const extractedFacts = await extractUserFacts(text);
-      if (extractedFacts.location) {
-        user.memoryFacts.location = extractedFacts.location;
-        console.log(`   Saved location: ${extractedFacts.location}`);
+      // Extract location via regex (no API call needed here)
+      const locationMatch = text.match(/(?:from|in|at|live in|living in|based in)\s+([A-Za-z\s]+?)(?:\s*[,!?.\n]|$)/i);
+      if (locationMatch) {
+        user.memoryFacts.location = locationMatch[1].trim();
+        console.log(`   Saved location: ${user.memoryFacts.location}`);
       }
     }
     
@@ -1370,6 +1389,7 @@ app.post("/webhook", async (req, res) => {
       console.log(`📸 Stage 5A triggered (${isFlirty ? 'FLIRTY' : 'MILD'})`);
       
       // Use Grok for Stage 5A
+      userBotReplying.add(chatId);
       const replyText = await callGrok(
         buildGrokPrompt(user, "stage_5A"),
         buildContextPrompt(user, "stage_5A", getTimeContext()),
@@ -1379,6 +1399,7 @@ app.post("/webhook", async (req, res) => {
       user.has_seen_content = true;
     
       await sendBurstReplies(user, chatId, replyText);
+      userBotReplying.delete(chatId);
     
       user.recentMessages.push(`Aurelia: ${replyText}`);
       if (user.recentMessages.length > 12) {
@@ -1430,10 +1451,11 @@ app.post("/webhook", async (req, res) => {
     user.emotional_ready = true;
   }
 
-  /* ========= EXTRACT MEMORY FACTS ========= */
-  try {
-    const extractedFacts = await extractUserFacts(text);
+  /* ========= COMBINED: EXTRACT FACTS + DETECT INTENT (1 API call) ========= */
+  const { intent: intentData, facts: extractedFacts } = await classifyMessageAndExtractFacts(user, text, user.recentMessages);
 
+  // Save extracted facts
+  try {
     if (extractedFacts && Object.keys(extractedFacts).length > 0) {
       const newFacts = {};
 
@@ -1451,21 +1473,17 @@ app.post("/webhook", async (req, res) => {
           },
         });
         console.log(`💾 Saved facts for ${chatId}:`, newFacts);
-        
-        // ========= CANCEL SCHEDULED GREETING IF USER ALREADY INTRODUCED =========
-        // If user mentioned location, they've already introduced themselves
+
+        // Cancel scheduled greeting if user already introduced location
         if (newFacts.location && user.start_greeting_scheduled && !user.start_greeting_sent) {
           console.log(`🚫 User introduced location - canceling scheduled greeting`);
-          user.start_greeting_sent = true; // Mark as sent to prevent scheduled greeting
+          user.start_greeting_sent = true;
         }
       }
     }
   } catch (e) {
-    console.log("Memory extract failed:", e.message);
+    console.log("Memory save failed:", e.message);
   }
-
-  /* ========= INTENT + MOOD DETECTION ========= */
-  const intentData = await detectIntent(user, text, user.recentMessages);
 
   if (intentData.intent === "flirt") {
     user.conversation_mode = "flirting";
@@ -1624,20 +1642,28 @@ app.post("/webhook", async (req, res) => {
   }
 
   /* ========= BUILD PROMPT + CALL AI ========= */
-  let replyText;
+  // ✅ Đánh dấu bot đang reply → block tin nhắn mới từ user này
+  userBotReplying.add(chatId);
 
-  if (modelChoice === "openai") {
-    replyText = await callOpenAI(
-      buildOpenAIPrompt(user, strategy),
-      text
-    );
-  } else {
-    // Pass selectedStrategy to buildGrokPrompt for repeat sales
-    replyText = await callGrok(
-      buildGrokPrompt(user, strategy, selectedStrategy),
-      buildContextPrompt(user, strategy, getTimeContext()),
-      text
-    );
+  let replyText;
+  try {
+    if (modelChoice === "openai") {
+      replyText = await callOpenAI(
+        buildOpenAIPrompt(user, strategy),
+        text
+      );
+    } else {
+      // Pass selectedStrategy to buildGrokPrompt for repeat sales
+      replyText = await callGrok(
+        buildGrokPrompt(user, strategy, selectedStrategy),
+        buildContextPrompt(user, strategy, getTimeContext()),
+        text
+      );
+    }
+  } catch (err) {
+    console.error("❌ AI call failed:", err.message);
+    userBotReplying.delete(chatId);
+    return res.sendStatus(200);
   }
 
   // Parse asset markers from AI response
@@ -1646,6 +1672,9 @@ app.post("/webhook", async (req, res) => {
 
   /* ========= SEND MESSAGE ========= */
   await sendBurstReplies(user, chatId, cleanReplyText);
+
+  // ✅ Xong rồi → mở khóa, cho phép user nhắn tiếp
+  userBotReplying.delete(chatId);
 
   // ========= MONITORING: Log bot reply vào topic =========
   await logBotMessage(message.from.id, cleanReplyText);
