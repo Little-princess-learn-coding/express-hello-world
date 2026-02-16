@@ -54,7 +54,6 @@ app.use(express.json());
 const KOFI_LINK = "https://ko-fi.com/badbunny_08";
 const PAYPAL_USERNAME = "littleprincess08";
 const PAYPAL_LINK = "https://paypal.me/littleprincess08";
-const FANSLY_LINK = process.env.FANSLY_LINK || "https://fansly.com/badbunny_08"; // Add if you have one
 
 /* ================== STAGE SYSTEM ================== */
 
