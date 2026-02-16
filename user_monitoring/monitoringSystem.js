@@ -7,7 +7,7 @@ import {
   getUserIdByTopicId,
   updateLastAlertTime,
   getLastAlertTime
-} from './user_monitoring/monitoringDb.js';
+} from './monitoringDb.js';  // ✅ bỏ "user_monitoring/"
 
 // ================== CONFIGURATION ==================
 // Dùng TELEGRAM_AURELIABOT_TOKEN giống với app.js gốc của bạn
@@ -354,4 +354,4 @@ export async function handleAdminMessage(message) {
 }
 
 // Re-export isWaitingAdmin cho app.js dùng
-export { isWaitingAdmin } from './user_monitoring/monitoringDb.js';
+export { isWaitingAdmin } from './monitoringDb.js';  // ✅ bỏ "user_monitoring/"
