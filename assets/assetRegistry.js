@@ -1144,7 +1144,7 @@
     },
     "flirt_2": {
       "type": "tease_selfie",
-      "path": "/assets/files/tease_selfie/tease_2.jpg",
+      "path": "/assets/files/tease_selfie/tease_2.png",
       "metadata": {
         "tease_level": "high"
       },
@@ -1152,31 +1152,6 @@
       "auto_delete": true,
       "ttl": 20,
       "strategy_id": 7
-    }
-  },
-
-  "teaser_videos": {
-    "album_preview_1": {
-      "type": "teaser_video",
-      "path": "/assets/files/videos/teaser_1.mp4",
-      "metadata": {
-        "duration": 3,
-        "purpose": "tease"
-      },
-      "reusable_per_user": "limited",
-      "auto_delete": false,
-      "strategy_id": 4
-    },
-    "redirect_kofi": {
-      "type": "teaser_video",
-      "path": "/assets/files/videos/kofi_redirect.mp4",
-      "metadata": {
-        "duration": 5,
-        "purpose": "redirect to ko-fi"
-      },
-      "reusable_per_user": "limited",
-      "auto_delete": false,
-      "strategy_id": 4
     }
   }
 }
