@@ -2,9 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Load asset registry
-const assetRegistry = JSON.parse(
-  fs.readFileSync(path.join(__dirname, 'assetRegistry.json'), 'utf8')
-);
+const assetRegistry = require('./assetRegistry.js');
 
 // Track what assets each user has received
 const userAssetHistory = {};
