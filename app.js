@@ -681,8 +681,61 @@ const users = {};
 // ✅ Chống duplicate webhook (Telegram retry)
 const processingMessages = new Set();
 
-// ✅ Track user đang chờ bot reply xong chưa (tránh spam)
+// ✅ Queue tin nhắn: nếu bot đang reply thì lưu tin mới vào hàng chờ
 const userBotReplying = new Set();
+const userMessageQueue = new Map(); // chatId → [text, text, ...]
+
+// Hàm thêm tin vào queue
+function enqueueMessage(chatId, text) {
+  if (!userMessageQueue.has(chatId)) {
+    userMessageQueue.set(chatId, []);
+  }
+
+  const queue = userMessageQueue.get(chatId);
+
+  // ✅ Bỏ qua nếu tin nhắn trùng với tin cuối trong queue
+  const lastQueued = queue[queue.length - 1];
+  if (lastQueued && lastQueued.trim().toLowerCase() === text.trim().toLowerCase()) {
+    console.log(`⏭️ Duplicate message ignored for ${chatId}: "${text.substring(0, 30)}..."`);
+    return;
+  }
+
+  // ✅ Bỏ qua nếu tin nhắn trùng với tin đang xử lý (tin cuối user đã nhắn)
+  const user = users[chatId];
+  if (user && user.recentMessages.length > 0) {
+    const lastUserMsg = user.recentMessages
+      .filter(m => m.startsWith('User:'))
+      .slice(-1)[0];
+    if (lastUserMsg) {
+      const lastText = lastUserMsg.replace(/^User:\s*/, '').trim().toLowerCase();
+      if (lastText === text.trim().toLowerCase()) {
+        console.log(`⏭️ Duplicate of current message ignored for ${chatId}: "${text.substring(0, 30)}..."`);
+        return;
+      }
+    }
+  }
+
+  queue.push(text);
+  console.log(`📥 Queued message for ${chatId}: "${text.substring(0, 30)}..." (queue size: ${queue.length})`);
+}
+
+// Hàm lấy tin tiếp theo từ queue và xử lý
+async function processNextInQueue(chatId) {
+  const queue = userMessageQueue.get(chatId);
+  if (!queue || queue.length === 0) return;
+
+  // Lấy tin đầu tiên trong queue
+  const nextText = queue.shift();
+  if (queue.length === 0) userMessageQueue.delete(chatId);
+
+  console.log(`🔄 Processing queued message for ${chatId}: "${nextText.substring(0, 30)}..."`);
+
+  // Giả lập webhook call với tin nhắn từ queue
+  const user = getUser(chatId);
+  if (user) {
+    await processUserMessage(chatId, nextText, user);
+  }
+}
 
 function getUser(chatId) {
   if (!users[chatId]) {
@@ -1128,9 +1181,9 @@ app.post("/webhook", async (req, res) => {
   processingMessages.add(messageKey);
   setTimeout(() => processingMessages.delete(messageKey), 30000);
 
-  // ✅ Fix 2: Nếu bot đang reply cho user này → bỏ qua tin mới, chờ xong
+  // ✅ Fix 2: Nếu bot đang reply cho user này → đưa tin vào queue, xử lý sau
   if (userBotReplying.has(chatId)) {
-    console.log(`⏸️ Bot đang reply cho ${chatId} → bỏ qua tin nhắn mới`);
+    enqueueMessage(chatId, text);
     return res.sendStatus(200);
   }
 
@@ -1771,8 +1824,93 @@ app.post("/webhook", async (req, res) => {
   console.log(`📊 User ${chatId}:`, summary);
   console.log(`🎭 Stage: ${user.stages.current}, Completed: [${user.stages.completed.join(', ')}]`);
 
+  // ✅ Bot xong rồi → kiểm tra queue, nếu có tin chờ thì xử lý tiếp
+  setTimeout(() => processNextInQueue(chatId), 500);
+
   res.sendStatus(200);
 });
+
+/* ================== PROCESS USER MESSAGE (dùng cho queue) ================== */
+async function processUserMessage(chatId, text, user) {
+  // Tránh xử lý nếu bot đang bận
+  if (userBotReplying.has(chatId)) {
+    enqueueMessage(chatId, text);
+    return;
+  }
+
+  // ✅ Block time wasters và closed conversations
+  if (isTimeWaster(user.state) || user.conversationClosed) return;
+
+  user.message_count++;
+  user.last_active = Date.now();
+
+  if (user.conversation_mode === "idle" || user.conversation_mode === "resting") {
+    user.conversation_mode = "chatting";
+  }
+
+  onUserMessage(user.state);
+  resetWeeklyCounter(user.state);
+  initializeStageTracking(user);
+
+  user.recentMessages.push(`User: ${text}`);
+  if (user.recentMessages.length > 12) user.recentMessages.shift();
+
+  // Combined classify
+  const { intent: intentData, facts: extractedFacts } = await classifyMessageAndExtractFacts(user, text, user.recentMessages);
+
+  // Save facts
+  if (extractedFacts && Object.keys(extractedFacts).length > 0) {
+    const newFacts = {};
+    for (const key in extractedFacts) {
+      if (extractedFacts[key] && !user.memoryFacts[key]) newFacts[key] = extractedFacts[key];
+    }
+    if (Object.keys(newFacts).length > 0) {
+      Object.assign(user.memoryFacts, newFacts);
+      console.log(`💾 Saved facts for ${chatId}:`, newFacts);
+    }
+  }
+
+  if (intentData.intent === "flirt") user.conversation_mode = "flirting";
+  else if (intentData.intent === "normal") user.conversation_mode = "chatting";
+
+  applyIntent(user, intentData);
+  const modelChoice = decideModel(user, intentData);
+
+  // Call AI
+  userBotReplying.add(chatId);
+  let replyText;
+  try {
+    if (modelChoice === "openai") {
+      replyText = await callOpenAI(buildOpenAIPrompt(user, null), text);
+    } else {
+      replyText = await callGrok(
+        buildGrokPrompt(user, null, null),
+        buildContextPrompt(user, null, getTimeContext()),
+        text
+      );
+    }
+  } catch (err) {
+    console.error("❌ Queue AI call failed:", err.message);
+    userBotReplying.delete(chatId);
+    return;
+  }
+
+  const assetMarkers = parseAssetMarkers(replyText);
+  const cleanReplyText = assetMarkers.cleanResponse;
+
+  await sendBurstReplies(user, chatId, cleanReplyText);
+  userBotReplying.delete(chatId);
+
+  await logBotMessage(chatId, cleanReplyText);
+
+  user.recentMessages.push(`Aurelia: ${cleanReplyText}`);
+  if (user.recentMessages.length > 12) user.recentMessages.shift();
+
+  console.log(`✅ Queue message processed for ${chatId}`);
+
+  // Process next in queue if any
+  setTimeout(() => processNextInQueue(chatId), 500);
+}
 
 /* ================== CONFIRMATION CHECKER ================== */
 async function checkAndSendPendingConfirmations() {
