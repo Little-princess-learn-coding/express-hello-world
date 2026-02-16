@@ -1,4 +1,4 @@
-{
+module.exports = {
   "memes": {
     "happy": {
       "type": "meme",
