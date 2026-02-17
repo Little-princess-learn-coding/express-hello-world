@@ -828,29 +828,37 @@ function getTimeContext() {
   return "deep_night";
 }
 
-function calculateDelay(user, replyText) {
+function calculateDelay(user, replyText, isFirstInBurst = true) {
+  // First reply ever (stranger) → delay 3-5 phút để tự nhiên
   if (!user.firstReplySent && isStranger(user.state)) {
-    return 180000 + Math.random() * 120000; // 3–5 phút
+    return 180000 + Math.random() * 120000; // 3-5 phút
   }
 
+  // Tin nhắn thứ 2, 3 trong cùng 1 burst → delay ngắn, liên tiếp nhau
+  if (!isFirstInBurst) {
+    return 600 + Math.random() * 400; // 0.6-1 giây
+  }
+
+  // Tin nhắn đầu tiên của mỗi reply → delay theo relationship
   let baseDelay;
   switch (user.state.relationship_state) {
     case "stranger":
-      baseDelay = 2000;
+      baseDelay = 1500;
       break;
     case "casual":
-      baseDelay = 900;
+      baseDelay = 800;
       break;
     case "supporter":
       baseDelay = 500;
       break;
     default:
-      baseDelay = 1200;
+      baseDelay = 1000;
   }
 
-  const perChar = 30;
-  const random = Math.random() * 600;
-  const max = 4500;
+  // Typing simulation: ~5ms per char (realistic typing speed)
+  const perChar = 5;
+  const random = Math.random() * 300;
+  const max = 3000; // tối đa 3 giây cho tin đầu
 
   return Math.min(
     baseDelay + replyText.length * perChar + random,
@@ -906,7 +914,9 @@ async function sendBurstReplies(user, chatId, text) {
   for (let i = 0; i < limitedParts.length; i++) {
     await sendTyping(chatId);
 
-    const delay = calculateDelay(user, limitedParts[i]);
+    // Tin đầu tiên → delay bình thường, tin tiếp theo → delay ngắn liên tiếp
+    const isFirstInBurst = (i === 0);
+    const delay = calculateDelay(user, limitedParts[i], isFirstInBurst);
     await sleep(delay);
 
     await fetch(
@@ -1723,6 +1733,8 @@ app.post("/webhook", async (req, res) => {
   const cleanReplyText = assetMarkers.cleanResponse;
 
   /* ========= SEND MESSAGE ========= */
+  // ✅ Đánh dấu firstReplySent TRƯỚC khi gửi để tránh delay 3-5 phút
+  user.firstReplySent = true;
   await sendBurstReplies(user, chatId, cleanReplyText);
 
   // ✅ Xong rồi → mở khóa, cho phép user nhắn tiếp
