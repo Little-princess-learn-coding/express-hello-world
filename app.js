@@ -847,10 +847,10 @@ function calculateDelay(user, replyText) {
       baseDelay = 1000;
   }
 
-  // Typing simulation: ~8ms per char
-  const perChar = 8;
-  const random = Math.random() * 400;
-  const max = 3500;
+  // Typing simulation: ~25ms per char (realistic: ~40 chars/sec)
+  const perChar = 25;
+  const random = Math.random() * 500;
+  const max = 6000; // tối đa 6 giây
 
   return Math.min(
     baseDelay + replyText.length * perChar + random,
@@ -1065,7 +1065,15 @@ ${windDownInstructions}
 USER STATE: ${user.state.relationship_state}
 Emotional connection: ${user.relationship_level}/10
 
-Keep responses natural, 1-3 sentences usually.`;
+=== TEXTING STYLE (STRICT) ===
+- Write like a real girl texting on phone, NOT like writing an essay
+- Each message = MAX 1 short sentence (8-12 words)
+- NEVER combine multiple thoughts in one message
+- To say 2 things → write as 2 SEPARATE lines (they become separate messages)
+- BAD: "hi there! I'm doing great, thanks for asking! How about you?"
+- GOOD: "hi!" then new line "doing great~" then new line "how about u?"
+- Do NOT ask multiple questions in one reply
+- Do NOT repeat info already said`;
 
   return SYSTEM_PROMPT;
 }
