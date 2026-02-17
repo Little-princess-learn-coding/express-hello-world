@@ -828,22 +828,12 @@ function getTimeContext() {
   return "deep_night";
 }
 
-function calculateDelay(user, replyText, isFirstInBurst = true) {
-  // First reply ever (stranger) → delay 3-5 phút để tự nhiên
-  if (!user.firstReplySent && isStranger(user.state)) {
-    return 180000 + Math.random() * 120000; // 3-5 phút
-  }
-
-  // Tin nhắn thứ 2, 3 trong cùng 1 burst → delay ngắn, liên tiếp nhau
-  if (!isFirstInBurst) {
-    return 600 + Math.random() * 400; // 0.6-1 giây
-  }
-
-  // Tin nhắn đầu tiên của mỗi reply → delay theo relationship
+function calculateDelay(user, replyText) {
+  // Delay giữa các tin trong cùng 1 burst → ngắn, tự nhiên như đang gõ
   let baseDelay;
   switch (user.state.relationship_state) {
     case "stranger":
-      baseDelay = 1500;
+      baseDelay = 1200;
       break;
     case "casual":
       baseDelay = 800;
@@ -855,15 +845,28 @@ function calculateDelay(user, replyText, isFirstInBurst = true) {
       baseDelay = 1000;
   }
 
-  // Typing simulation: ~5ms per char (realistic typing speed)
-  const perChar = 5;
-  const random = Math.random() * 300;
-  const max = 3000; // tối đa 3 giây cho tin đầu
+  // Typing simulation: ~8ms per char
+  const perChar = 8;
+  const random = Math.random() * 400;
+  const max = 3500;
 
   return Math.min(
     baseDelay + replyText.length * perChar + random,
     max
   );
+}
+
+// Kiểm tra có nên delay 5 phút không (lần đầu hoặc sau thời gian dài)
+function shouldDelayFirstReply(user) {
+  if (!user.firstReplySent && isStranger(user.state)) {
+    return true; // Lần đầu tiên reply với stranger
+  }
+  // Sau 30 phút không hoạt động → coi như cuộc hội thoại mới
+  const thirtyMin = 30 * 60 * 1000;
+  if (user.last_active && (Date.now() - user.last_active) > thirtyMin) {
+    return true;
+  }
+  return false;
 }
 
 function formatUserFacts(user) {
@@ -899,24 +902,29 @@ function splitIntoBursts(text) {
 async function sendBurstReplies(user, chatId, text) {
   const parts = splitIntoBursts(text);
 
-  // ✅ Giới hạn tối đa 3 tin nhắn mỗi lần reply
+  // ✅ Random 1-3 tin nhắn mỗi lượt (không cố định)
+  const maxMessages = Math.floor(Math.random() * 3) + 1; // random 1, 2 hoặc 3
   let limitedParts;
-  if (parts.length <= 3) {
+  if (parts.length <= maxMessages) {
     limitedParts = parts;
   } else {
-    limitedParts = [
-      parts[0],
-      parts[1],
-      parts.slice(2).join(' ')
-    ];
+    // Gộp phần thừa vào tin cuối
+    limitedParts = parts.slice(0, maxMessages - 1);
+    limitedParts.push(parts.slice(maxMessages - 1).join(' '));
   }
 
+  // ✅ Delay cả lượt TRƯỚC khi gửi tin đầu (5 phút nếu lần đầu/hội thoại mới)
+  if (shouldDelayFirstReply(user)) {
+    const burstDelay = 180000 + Math.random() * 120000; // 3-5 phút
+    console.log(`⏰ First reply delay: ${Math.round(burstDelay / 60000)} minutes`);
+    await sendTyping(chatId);
+    await sleep(burstDelay);
+  }
+
+  // ✅ Gửi từng tin liên tiếp với delay tự nhiên (như đang gõ)
   for (let i = 0; i < limitedParts.length; i++) {
     await sendTyping(chatId);
-
-    // Tin đầu tiên → delay bình thường, tin tiếp theo → delay ngắn liên tiếp
-    const isFirstInBurst = (i === 0);
-    const delay = calculateDelay(user, limitedParts[i], isFirstInBurst);
+    const delay = calculateDelay(user, limitedParts[i]);
     await sleep(delay);
 
     await fetch(
@@ -1733,8 +1741,6 @@ app.post("/webhook", async (req, res) => {
   const cleanReplyText = assetMarkers.cleanResponse;
 
   /* ========= SEND MESSAGE ========= */
-  // ✅ Đánh dấu firstReplySent TRƯỚC khi gửi để tránh delay 3-5 phút
-  user.firstReplySent = true;
   await sendBurstReplies(user, chatId, cleanReplyText);
 
   // ✅ Xong rồi → mở khóa, cho phép user nhắn tiếp
