@@ -1468,8 +1468,8 @@ app.post("/webhook", async (req, res) => {
     
       user.has_seen_content = true;
     
-      await sendBurstReplies(user, chatId, replyText);
       userBotReplying.delete(chatId);
+      await sendBurstReplies(user, chatId, replyText);
     
       user.recentMessages.push(`Aurelia: ${replyText}`);
       if (user.recentMessages.length > 12) {
@@ -1741,10 +1741,10 @@ app.post("/webhook", async (req, res) => {
   const cleanReplyText = assetMarkers.cleanResponse;
 
   /* ========= SEND MESSAGE ========= */
-  await sendBurstReplies(user, chatId, cleanReplyText);
-
-  // ✅ Xong rồi → mở khóa, cho phép user nhắn tiếp
+  // ✅ Release lock TRƯỚC khi sendBurstReplies để không block tin nhắn mới
+  // (sendBurstReplies có thể sleep 3-5 phút bên trong)
   userBotReplying.delete(chatId);
+  await sendBurstReplies(user, chatId, cleanReplyText);
 
   // ========= MONITORING: Log bot reply vào topic =========
   await logBotMessage(message.from.id, cleanReplyText);
@@ -1915,8 +1915,8 @@ async function processUserMessage(chatId, text, user) {
   const assetMarkers = parseAssetMarkers(replyText);
   const cleanReplyText = assetMarkers.cleanResponse;
 
-  await sendBurstReplies(user, chatId, cleanReplyText);
   userBotReplying.delete(chatId);
+  await sendBurstReplies(user, chatId, cleanReplyText);
 
   await logBotMessage(chatId, cleanReplyText);
 
