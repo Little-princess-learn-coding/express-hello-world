@@ -680,8 +680,10 @@ const users = {};
 // ✅ Chống duplicate webhook (Telegram retry)
 const processingMessages = new Set();
 
-// ✅ Queue tin nhắn: nếu bot đang reply thì lưu tin mới vào hàng chờ
+// ✅ Lock khi bot đang gọi AI (ngắn)
 const userBotReplying = new Set();
+// ✅ Lock khi bot đang gửi/delay tin nhắn (dài - chặn Telegram retry spam)
+const userBotSending = new Set();
 const userMessageQueue = new Map(); // chatId → [text, text, ...]
 
 // Hàm thêm tin vào queue
@@ -908,36 +910,46 @@ async function sendBurstReplies(user, chatId, text) {
   if (parts.length <= maxMessages) {
     limitedParts = parts;
   } else {
-    // Gộp phần thừa vào tin cuối
     limitedParts = parts.slice(0, maxMessages - 1);
     limitedParts.push(parts.slice(maxMessages - 1).join(' '));
   }
 
-  // ✅ Delay cả lượt TRƯỚC khi gửi tin đầu (5 phút nếu lần đầu/hội thoại mới)
-  if (shouldDelayFirstReply(user)) {
-    const burstDelay = 180000 + Math.random() * 120000; // 3-5 phút
-    console.log(`⏰ First reply delay: ${Math.round(burstDelay / 60000)} minutes`);
-    await sendTyping(chatId);
-    await sleep(burstDelay);
-  }
+  // ✅ Lock sending để chặn Telegram retry gọi lại trong lúc đang delay
+  userBotSending.add(chatId);
 
-  // ✅ Gửi từng tin liên tiếp với delay tự nhiên (như đang gõ)
-  for (let i = 0; i < limitedParts.length; i++) {
-    await sendTyping(chatId);
-    const delay = calculateDelay(user, limitedParts[i]);
-    await sleep(delay);
+  try {
+    // ✅ Delay cả lượt TRƯỚC khi gửi (5 phút nếu lần đầu/hội thoại mới)
+    if (shouldDelayFirstReply(user)) {
+      const burstDelay = 180000 + Math.random() * 120000; // 3-5 phút
+      console.log(`⏰ First reply delay: ${Math.round(burstDelay / 60000)} minutes`);
+      await sendTyping(chatId);
+      await sleep(burstDelay);
+    }
 
-    await fetch(
-      `https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: limitedParts[i],
-        }),
-      }
-    );
+    // ✅ Đánh dấu đã gửi reply đầu tiên (sau khi delay xong)
+    user.firstReplySent = true;
+
+    // ✅ Gửi từng tin liên tiếp với delay tự nhiên
+    for (let i = 0; i < limitedParts.length; i++) {
+      await sendTyping(chatId);
+      const delay = calculateDelay(user, limitedParts[i]);
+      await sleep(delay);
+
+      await fetch(
+        `https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: limitedParts[i],
+          }),
+        }
+      );
+    }
+  } finally {
+    // ✅ Selalu release lock dù có lỗi hay không
+    userBotSending.delete(chatId);
   }
 }
 
@@ -1198,7 +1210,13 @@ app.post("/webhook", async (req, res) => {
   processingMessages.add(messageKey);
   setTimeout(() => processingMessages.delete(messageKey), 30000);
 
-  // ✅ Fix 2: Nếu bot đang reply cho user này → đưa tin vào queue, xử lý sau
+  // ✅ Fix 2a: Nếu bot đang gửi/delay → đưa tin vào queue, xử lý sau
+  if (userBotSending.has(chatId)) {
+    enqueueMessage(chatId, text);
+    return res.sendStatus(200);
+  }
+
+  // ✅ Fix 2b: Nếu bot đang gọi AI → đưa tin vào queue, xử lý sau
   if (userBotReplying.has(chatId)) {
     enqueueMessage(chatId, text);
     return res.sendStatus(200);
@@ -1741,10 +1759,13 @@ app.post("/webhook", async (req, res) => {
   const cleanReplyText = assetMarkers.cleanResponse;
 
   /* ========= SEND MESSAGE ========= */
-  // ✅ Release lock TRƯỚC khi sendBurstReplies để không block tin nhắn mới
-  // (sendBurstReplies có thể sleep 3-5 phút bên trong)
+  // ✅ Release AI lock
   userBotReplying.delete(chatId);
-  await sendBurstReplies(user, chatId, cleanReplyText);
+
+  // ✅ Chạy sendBurstReplies ở background (không await)
+  // → Telegram nhận 200 ngay, không retry nữa
+  (async () => {
+    await sendBurstReplies(user, chatId, cleanReplyText);
 
   // ========= MONITORING: Log bot reply vào topic =========
   await logBotMessage(message.from.id, cleanReplyText);
@@ -1841,16 +1862,18 @@ app.post("/webhook", async (req, res) => {
   console.log(`📊 User ${chatId}:`, summary);
   console.log(`🎭 Stage: ${user.stages.current}, Completed: [${user.stages.completed.join(', ')}]`);
 
-  // ✅ Bot xong rồi → kiểm tra queue, nếu có tin chờ thì xử lý tiếp
-  setTimeout(() => processNextInQueue(chatId), 500);
+    // ✅ Sau khi gửi xong → kiểm tra queue
+    setTimeout(() => processNextInQueue(chatId), 500);
+  })(); // end background async
 
+  // ✅ Trả 200 ngay lập tức → Telegram không retry nữa
   res.sendStatus(200);
 });
 
 /* ================== PROCESS USER MESSAGE (dùng cho queue) ================== */
 async function processUserMessage(chatId, text, user) {
-  // Tránh xử lý nếu bot đang bận
-  if (userBotReplying.has(chatId)) {
+  // Tránh xử lý nếu bot đang bận (gọi AI hoặc đang gửi)
+  if (userBotReplying.has(chatId) || userBotSending.has(chatId)) {
     enqueueMessage(chatId, text);
     return;
   }
