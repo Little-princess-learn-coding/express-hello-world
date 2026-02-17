@@ -587,7 +587,7 @@ async function callOpenAI(systemPrompt, userMessage) {
 /* ================== COMBINED CLASSIFIER (Intent + Facts) ================== */
 // ✅ Gộp extractUserFacts + detectIntent thành 1 API call duy nhất
 async function classifyMessageAndExtractFacts(user, userMessage, recentMessages) {
-  const conversationContext = recentMessages.slice(-6).join("\n");
+  const conversationContext = recentMessages.slice(-12).join("\n");
 
   const systemPrompt = `You are an analyzer for a cosplayer chatbot named Aurelia.
 
@@ -872,12 +872,20 @@ function shouldDelayFirstReply(user) {
 }
 
 function formatUserFacts(user) {
-  if (!user.memoryFacts) return "No known facts.";
+  if (!user.memoryFacts) return "No known facts yet.";
 
-  return Object.entries(user.memoryFacts)
+  const known = Object.entries(user.memoryFacts)
     .filter(([_, v]) => v)
     .map(([k, v]) => `- ${k}: ${v}`)
     .join("\n");
+
+  if (!known) return "No known facts yet.";
+
+  return `${known}
+
+IMPORTANT: You already know the above facts about this user.
+Do NOT ask about them again. Do NOT ask "where are you from?" if location is known.
+Do NOT ask about their job/age/name if already recorded above.`;
 }
 
 async function sendTyping(chatId) {
@@ -1017,7 +1025,7 @@ User asks: "PayPal: @${PAYPAL_USERNAME} (or ko-fi if u prefer: ${KOFI_LINK})"
 ${formatUserFacts(user)}
 
 === RECENT CONVERSATION ===
-${user.recentMessages.slice(-6).join('\n')}
+${user.recentMessages.slice(-12).join('\n')}
 
 === CURRENT STRATEGY ===
 ${strategy || 'normal_conversation'}
@@ -1538,7 +1546,7 @@ app.post("/webhook", async (req, res) => {
 
   /* ========= SAVE USER MESSAGE (SHORT MEMORY) ========= */
   user.recentMessages.push(`User: ${text}`);
-  if (user.recentMessages.length > 12) {
+  if (user.recentMessages.length > 20) {
     user.recentMessages.shift();
   }
   
@@ -1834,7 +1842,7 @@ app.post("/webhook", async (req, res) => {
 
   /* ========= SAVE BOT REPLY ========= */
   user.recentMessages.push(`Aurelia: ${cleanReplyText}`);
-  if (user.recentMessages.length > 12) {
+  if (user.recentMessages.length > 20) {
     user.recentMessages.shift();
   }
 
