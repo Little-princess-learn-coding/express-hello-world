@@ -35,25 +35,22 @@ const NOWPAYMENTS_IPN_SECRET = process.env.NOWPAYMENTS_IPN_SECRET;
 // 📦 CATALOG — Điền album thật của Aurelia vào đây
 // ============================================================
 export const CATALOG = {
-  "bunny_ero_cos": {
-    id: "bunny_ero_cos",
-    name: "Bunny Girl · Ero Cos",
-    description: "8 ảnh exclusive, chưa đăng anywhere~ 🐰",
-    photoCount: 8,
-    price: 3.50,
-    previewPhoto: "./assets/ppv/previews/bunny_preview.jpg", // ảnh preview gửi kèm
-    filePath: "./assets/ppv/bunny_ero.zip",
-    fileType: "zip",
-  },
-  "genshin_bts": {
-    id: "genshin_bts",
-    name: "Genshin · Behind The Scenes",
-    description: "32 ảnh hậu trường siêu exclusive 🌸",
-    photoCount: 32,
-    price: 4.99,
-    previewPhoto: "./assets/ppv/previews/genshin_preview.jpg",
-    filePath: "./assets/ppv/genshin_bts.zip",
-    fileType: "zip",
+  "red_kitty": {
+    id: "red_kitty",
+    name: "Cute little kitty in red ꒦˘∪꒷",
+    description: "6 pics",
+    photoCount: 6,
+    price: 35,
+    deliveryType: "telegram_album",  // ← quan trọng
+    photoIds: [
+      "AgACAgUAAyEFAATnyo_qAAMDaZk8WIy2z4HBqXTG3606omUtdeEAApYNaxtKa8hUsB52DjoYKu8BAAMCAAN5AAM6BA",  // ảnh 1
+      "AgACAgUAAyEFAATnyo_qAAMGaZk8WFV5kPS1VAgsB0EyTPxEK9gAApUNaxtKa8hUyvFSVbMC2GYBAAMCAAN5AAM6BA",  // ảnh 2
+      "AgACAgUAAyEFAATnyo_qAAMFaZk8WP2-tKojKJpSnKJXk-7IFSQAApMNaxtKa8hUCFaoC55vLqkBAAMCAAN5AAM6BA",
+      "AgACAgUAAyEFAATnyo_qAAMEaZk8WPmys0XAPVNMF1uu5LxudV4AApENaxtKa8hUvsQ4no_VDP8BAAMCAAN5AAM6BA",
+      "AgACAgUAAyEFAATnyo_qAAMHaZk8WGrF29UDhtpR5OIavHNZDXgAApINaxtKa8hUM5manuBCKEgBAAMCAAN5AAM6BA",
+      "AgACAgUAAyEFAATnyo_qAAMIaZk8WL1PX4VzogjNoOYFOjEGdeIAApQNaxtKa8hUYJu_SZbxFtwBAAMCAAN5AAM6BA",
+    ],
+    previewPhotoId: "AgACAgUAAxkBAAI...", // ảnh preview hiện khi bot đề xuất
   },
   "miku_full": {
     id: "miku_full",
