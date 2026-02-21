@@ -878,6 +878,15 @@ function decideModel(user, intentData) {
 
 /* ================== WEBHOOK ================== */
 app.post("/webhook", async (req, res) => {
+  // ✅ TẠM THỜI: Log file_id ảnh từ channel (xóa sau khi lấy xong file_id)
+  if (req.body.channel_post?.photo) {
+    const photos = req.body.channel_post.photo;
+    const fileId = photos[photos.length - 1].file_id;
+    const caption = req.body.channel_post.caption || "(no caption)";
+    console.log(`📸 NEW PHOTO file_id: ${fileId} | caption: ${caption}`);
+    return res.sendStatus(200);
+  }
+
   // ✅ HANDLE CALLBACK QUERY (nút inline keyboard - PPV store buttons)
   if (req.body.callback_query) {
     const handled = await handleCallbackQuery(req.body.callback_query);
