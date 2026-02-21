@@ -50,17 +50,7 @@ export const CATALOG = {
       "AgACAgUAAyEFAATnyo_qAAMHaZk8WGrF29UDhtpR5OIavHNZDXgAApINaxtKa8hUM5manuBCKEgBAAMCAAN5AAM6BA",
       "AgACAgUAAyEFAATnyo_qAAMIaZk8WL1PX4VzogjNoOYFOjEGdeIAApQNaxtKa8hUYJu_SZbxFtwBAAMCAAN5AAM6BA",
     ],
-    previewPhotoId: "AgACAgUAAxkBAAI...", // ảnh preview hiện khi bot đề xuất
-  },
-  "miku_full": {
-    id: "miku_full",
-    name: "Hatsune Miku · Full Set",
-    description: "48 ảnh full set + 2 video clip 💚",
-    photoCount: 48,
-    price: 7.99,
-    previewPhoto: "./assets/ppv/previews/miku_preview.jpg",
-    filePath: "./assets/ppv/miku_full.zip",
-    fileType: "zip",
+    previewPhotoId: "AgACAgUAAyEFAATnyo_qAAMVaZlMQO8uDn7YpwpYDvEhbwIanA0AAqwNaxtKa8hUe5dqfcbVwjkBAAMCAAN5AAM6BA", // ảnh preview hiện khi bot đề xuất
   },
 };
 
