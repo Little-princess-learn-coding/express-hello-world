@@ -19,6 +19,7 @@ import STAGE_5A_PROMPT from "./prompts/stage5A.content.js";
 import FIRST_SALE_GUIDE from "./prompts/1st.saleGuide.js";
 import REPEATED_SALE_GUIDE from "./prompts/repeated_sale.js";
 import SYSTEM_PROMPT_BASE from "./prompts/systemPrompt.js";
+import { buildPreciseOpenAIPrompt, buildPreciseGrokPrompt } from "./prompts/precisionStage.js";
 
 import {
   parseAssetMarkers,
@@ -1032,7 +1033,7 @@ app.post("/webhook", async (req, res) => {
       console.log(`📸 Stage 5A triggered`);
       userBotReplying.add(chatId);
       const replyText = await callGrok(
-        buildGrokPrompt(user, "stage_5A"),
+        buildPreciseGrokPrompt(user, "stage_5A", null),
         buildContextPrompt(user, "stage_5A", getTimeContext()),
         text
       );
@@ -1176,10 +1177,10 @@ app.post("/webhook", async (req, res) => {
   let replyText;
   try {
     if (modelChoice === "openai") {
-      replyText = await callOpenAI(buildOpenAIPrompt(user, strategy), text);
+      replyText = await callOpenAI(buildPreciseOpenAIPrompt(user, strategy), text);
     } else {
       replyText = await callGrok(
-        buildGrokPrompt(user, strategy, selectedStrategy),
+        buildPreciseGrokPrompt(user, strategy, selectedStrategy),
         buildContextPrompt(user, strategy, getTimeContext()),
         text
       );
@@ -1295,9 +1296,9 @@ async function processUserMessage(chatId, text, user) {
   let replyText;
   try {
     if (modelChoice === "openai") {
-      replyText = await callOpenAI(buildOpenAIPrompt(user, null), text);
+      replyText = await callOpenAI(buildPreciseOpenAIPrompt(user, null), text);
     } else {
-      replyText = await callGrok(buildGrokPrompt(user, null, null), buildContextPrompt(user, null, getTimeContext()), text);
+      replyText = await callGrok(buildPreciseGrokPrompt(user, null, null), buildContextPrompt(user, null, getTimeContext()), text);
     }
   } catch (err) {
     console.error("❌ Queue AI failed:", err.message);
