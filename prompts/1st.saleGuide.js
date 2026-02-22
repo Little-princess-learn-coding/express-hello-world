@@ -101,7 +101,6 @@ BEHAVIOR:
 - Naturally reveal being a cosplayer.
 - Share struggles calmly and honestly:
   - Costumes are expensive
-  - Family doesn’t fully understand
   - Living independently
   - Still unknown, just starting out
 - Keep it emotional but not dramatic.
