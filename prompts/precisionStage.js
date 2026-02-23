@@ -8,10 +8,10 @@
  * ============================================================
  */
 
-import FIRST_SALE_GUIDE from "./prompts/1st.saleGuide.js";
-import REPEATED_SALE_GUIDE from "./prompts/repeated_sale.js";
-import STAGE_5A_PROMPT from "./prompts/stage5A.content.js";
-import SYSTEM_PROMPT_BASE from "./prompts/systemPrompt.js";
+import FIRST_SALE_GUIDE from "./1st.saleGuide.js";
+import REPEATED_SALE_GUIDE from "./repeated_sale.js";
+import STAGE_5A_PROMPT from "./stage5A.content.js";
+import SYSTEM_PROMPT_BASE from "./systemPrompt.js";
 
 // ============================================================
 // STAGE CONTENT — extract đúng stage từ FIRST_SALE_GUIDE
@@ -114,7 +114,7 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
 - Do NOT ask multiple questions
 - Do NOT repeat what was already said
 - Do NOT use "hey" or "hehe"
-- MAX 1 emoji per reply, only: 💕 ;-; 😈 ~~ ^^`);
+- MAX 1 emoji per 5 replies, only: 💕 ;-; 😈 ~~ ^^`);
 
   return parts.join("\n\n");
 }
