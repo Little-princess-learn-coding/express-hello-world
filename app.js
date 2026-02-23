@@ -21,6 +21,19 @@ import REPEATED_SALE_GUIDE from "./prompts/repeated_sale.js";
 import SYSTEM_PROMPT_BASE from "./prompts/systemPrompt.js";
 import { buildPreciseOpenAIPrompt, buildPreciseGrokPrompt } from "./prompts/precisionStage.js";
 
+// ✅ Supabase Memory DB + RAG
+import {
+  loadFanProfile,
+  saveFanProfile,
+  createFanProfile,
+  saveMemory,
+  getMemories,
+  searchMemories,
+  savePurchase,
+  buildFanContext,
+} from "./database/memoryDB.js";
+import { extractAndSaveMemories, buildRAGContextPrompt } from "./database/ragEngine.js";
+
 import {
   parseAssetMarkers,
   getAssetToSend,
@@ -497,7 +510,7 @@ Respond ONLY in this exact JSON (no extra text):
 
 /* ================== PROMPT BUILDERS ================== */
 
-function buildContextPrompt(user, strategy, timeContext) {
+async function buildContextPrompt(user, strategy, timeContext) {
   const ctx = user.conversationContext || createConversationContext();
   const stateSummary = getStateSummary(user.state);
 
@@ -515,6 +528,18 @@ function buildContextPrompt(user, strategy, timeContext) {
   const moodSection = `Fan mood: ${ctx.dominantMood} (trend: ${ctx.moodTrend})\n`;
   const threadsSection = ctx.openThreads.length > 0 ? `⚠️ Fan asked but not answered: ${ctx.openThreads[0]}\n` : "";
   const momentsSection = ctx.emotionalMoments.length > 0 ? `Notable: ${ctx.emotionalMoments.slice(-2).join(", ")}\n` : "";
+
+  // ✅ RAG: Load memories từ Supabase
+  let ragSection = "";
+  try {
+    const keywords = user.currentKeywords || [];
+    const fanCtx = await buildFanContext(user.chatId, null, keywords);
+    if (fanCtx?.contextString) {
+      ragSection = `\n=== LONG-TERM MEMORY (from past conversations) ===\n${fanCtx.contextString}\n`;
+    }
+  } catch (e) {
+    // RAG failed silently — không block response
+  }
 
   return `
 ${summarySection}
@@ -545,7 +570,7 @@ PAYMENT RULES:
 
 === RECENT MESSAGES ===
 ${user.recentMessages.slice(-10).join("\n")}
-
+${ragSection}
 === STRATEGY ===
 ${strategy || "normal_conversation"}
 `;
@@ -709,7 +734,7 @@ async function processNextInQueue(chatId) {
   if (user) await processUserMessage(chatId, nextText, user);
 }
 
-function getUser(chatId) {
+function getUser(chatId, username = null) {
   if (!users[chatId]) {
     users[chatId] = {
       chatId,
@@ -732,7 +757,6 @@ function getUser(chatId) {
       last_active: Date.now(),
       recentMessages: [],
       memoryFacts: { name: null, age: null, location: null, job: null },
-      // ✅ NEW: Conversation context for memory/mood/topic tracking
       conversationContext: createConversationContext(),
       firstReplySent: false,
       conversationClosed: false,
@@ -743,7 +767,31 @@ function getUser(chatId) {
       start_greeting_sent: false,
       stages: { current: 1, completed: [], skipped: [], stage5A_triggered: false },
       lastIntentData: null,
+      // RAG state
+      currentKeywords: [],
+      fanContextCache: null,
     };
+
+    // ✅ Load/create fan profile from Supabase (async, non-blocking)
+    loadFanProfile(chatId).then(async profile => {
+      if (!profile) {
+        await createFanProfile(chatId, username);
+        console.log(`🆕 New fan profile created: ${chatId}`);
+      } else {
+        // Restore persisted data
+        const u = users[chatId];
+        if (!u) return;
+        if (profile.name) u.memoryFacts.name = profile.name;
+        if (profile.age) u.memoryFacts.age = profile.age;
+        if (profile.location) u.memoryFacts.location = profile.location;
+        if (profile.job) u.memoryFacts.job = profile.job;
+        if (profile.relationship_level) u.relationship_level = profile.relationship_level;
+        if (profile.message_count) u.message_count = profile.message_count;
+        if (profile.stage) u.stages.current = profile.stage;
+        if (profile.relationship_state) u.state.relationship_state = profile.relationship_state;
+        console.log(`📂 Fan profile loaded: ${chatId} (${profile.relationship_state}, stage ${profile.stage})`);
+      }
+    }).catch(e => console.error("loadFanProfile error:", e));
   }
   return users[chatId];
 }
@@ -869,6 +917,16 @@ function applyIntent(user, intentData) {
   if (intentData.windDown) user.wind_down = true;
   if (intentData.mood === "positive") user.relationship_level = Math.min(10, user.relationship_level + 0.5);
   else if (intentData.mood === "negative") user.relationship_level = Math.max(0, user.relationship_level - 0.3);
+
+  // ✅ Sync relationship level + stage to Supabase every 5 messages
+  if (user.message_count % 5 === 0) {
+    saveFanProfile(user.chatId, {
+      relationship_level: user.relationship_level,
+      message_count: user.message_count,
+      stage: user.stages?.current || 1,
+      relationship_state: user.state.relationship_state,
+    }).catch(() => {});
+  }
 }
 
 function decideModel(user, intentData) {
@@ -1034,7 +1092,7 @@ app.post("/webhook", async (req, res) => {
       userBotReplying.add(chatId);
       const replyText = await callGrok(
         buildPreciseGrokPrompt(user, "stage_5A", null),
-        buildContextPrompt(user, "stage_5A", getTimeContext()),
+        await buildContextPrompt(user, "stage_5A", getTimeContext()),
         text
       );
       user.has_seen_content = true;
@@ -1087,7 +1145,7 @@ app.post("/webhook", async (req, res) => {
   // ✅ NEW: Refresh conversation summary every 10 messages
   await refreshConversationSummary(user);
 
-  // Save facts
+  // Save facts to in-memory + Supabase
   try {
     if (extractedFacts && Object.keys(extractedFacts).length > 0) {
       const newFacts = {};
@@ -1096,12 +1154,28 @@ app.post("/webhook", async (req, res) => {
       }
       if (Object.keys(newFacts).length > 0) {
         updateUser(user.chatId, { memoryFacts: { ...user.memoryFacts, ...newFacts } });
+        // ✅ Persist to Supabase
+        saveFanProfile(chatId, {
+          name: user.memoryFacts.name,
+          age: user.memoryFacts.age,
+          location: user.memoryFacts.location,
+          job: user.memoryFacts.job,
+          relationship_level: user.relationship_level,
+          message_count: user.message_count,
+          stage: user.stages?.current || 1,
+          relationship_state: user.state.relationship_state,
+        }).catch(e => console.log("Supabase profile save failed:", e.message));
         console.log(`💾 Saved facts for ${chatId}:`, newFacts);
       }
     }
   } catch (e) {
     console.log("Memory save failed:", e.message);
   }
+
+  // ✅ RAG: Extract memories từ tin nhắn fan và lưu Supabase
+  extractAndSaveMemories(chatId, text, user.recentMessages, (sys, usr) => callOpenAI(sys, usr))
+    .then(r => { user.currentKeywords = r.currentKeywords || []; })
+    .catch(() => { user.currentKeywords = []; });
 
   // ✅ NEW: Update conversation context with user message
   updateConversationContext(user, text, "user", intentData);
@@ -1181,7 +1255,7 @@ app.post("/webhook", async (req, res) => {
     } else {
       replyText = await callGrok(
         buildPreciseGrokPrompt(user, strategy, selectedStrategy),
-        buildContextPrompt(user, strategy, getTimeContext()),
+        await buildContextPrompt(user, strategy, getTimeContext()),
         text
       );
     }
@@ -1298,7 +1372,7 @@ async function processUserMessage(chatId, text, user) {
     if (modelChoice === "openai") {
       replyText = await callOpenAI(buildPreciseOpenAIPrompt(user, null), text);
     } else {
-      replyText = await callGrok(buildPreciseGrokPrompt(user, null, null), buildContextPrompt(user, null, getTimeContext()), text);
+      replyText = await callGrok(buildPreciseGrokPrompt(user, null, null), await buildContextPrompt(user, null, getTimeContext()), text);
     }
   } catch (err) {
     console.error("❌ Queue AI failed:", err.message);
