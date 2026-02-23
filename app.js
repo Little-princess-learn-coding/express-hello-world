@@ -957,7 +957,25 @@ app.post("/webhook", async (req, res) => {
   }
 
   const { message } = req.body;
-  if (!message || !message.text) return res.sendStatus(200);
+  if (!message) return res.sendStatus(200);
+
+  // ✅ Handle fan sending photo
+  if (message.photo && !message.text) {
+    const chatId = message.chat.id;
+    const fileId = message.photo[message.photo.length - 1].file_id;
+    const caption = message.caption || '';
+    // Save photo message to DB
+    saveMessage(chatId, {
+      role: 'fan',
+      content: caption || '[photo]',
+      media_type: 'photo',
+      file_id: fileId,
+      stage: users[chatId]?.stages?.current || 1,
+    }).catch(() => {});
+    return res.sendStatus(200);
+  }
+
+  if (!message.text) return res.sendStatus(200);
 
   const chatId = message.chat.id;
   const text = message.text;
@@ -1294,6 +1312,13 @@ app.post("/webhook", async (req, res) => {
     // ✅ Save bot message to Supabase
     saveMessage(chatId, { role: "bot", content: cleanReplyText, strategy: strategy || null, stage: user.stages?.current || 1 })
       .catch(e => console.log("saveMessage bot error:", e.message));
+    // ✅ Save any photos delivered (from assetMarkers)
+    if (assetMarkers.deliveredFileIds?.length > 0) {
+      for (const fid of assetMarkers.deliveredFileIds) {
+        saveMessage(chatId, { role: "bot", content: "[photo]", media_type: "photo", file_id: fid, stage: user.stages?.current || 1 })
+          .catch(() => {});
+      }
+    }
 
     // Send asset
     if (assetMarkers.hasAsset && !(user.wind_down && user.conversation_mode !== "selling")) {
@@ -1458,6 +1483,22 @@ async function sendTelegramMessage(chatId, text) {
 // ============================================================
 // DASHBOARD APIs
 // ============================================================
+
+
+// GET photo URL from Telegram file_id (for dashboard display)
+app.get("/api/photo/:fileId", async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const token = process.env.TELEGRAM_AURELIABOT_TOKEN;
+    const r = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+    const data = await r.json();
+    if (!data.ok) return res.status(404).json({ error: "File not found" });
+    const url = `https://api.telegram.org/file/bot${token}/${data.result.file_path}`;
+    res.json({ url });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // GET all fan profiles
 app.get("/api/fans", async (req, res) => {
