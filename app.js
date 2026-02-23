@@ -31,6 +31,9 @@ import {
   searchMemories,
   savePurchase,
   buildFanContext,
+  saveMessage,
+  checkTakeover,
+  setTakeover,
 } from "./database/memoryDB.js";
 import { extractAndSaveMemories, buildRAGContextPrompt } from "./database/ragEngine.js";
 
@@ -51,6 +54,7 @@ import { logUserMessage, logBotMessage, handleAdminMessage } from "./user_monito
 import { isWaitingAdmin } from "./user_monitoring/monitoringDb.js";
 
 import path from "path";
+import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 
 // ✅ PPV Store — album preview + PayPal + Crypto
@@ -1180,6 +1184,17 @@ app.post("/webhook", async (req, res) => {
   // ✅ NEW: Update conversation context with user message
   updateConversationContext(user, text, "user", intentData);
 
+  // ✅ Save fan message to Supabase
+  saveMessage(chatId, { role: "fan", content: text, stage: user.stages?.current || 1 })
+    .catch(e => console.log("saveMessage fan error:", e.message));
+
+  // ✅ Check Human Takeover — nếu admin đang takeover thì bot không reply
+  const isTakeover = await checkTakeover(chatId);
+  if (isTakeover) {
+    console.log(`🛑 Takeover active for ${chatId} — bot paused`);
+    return res.sendStatus(200);
+  }
+
   if (intentData.intent === "flirt") user.conversation_mode = "flirting";
   else if (intentData.intent === "normal") user.conversation_mode = "chatting";
   if (user.wind_down || intentData.windDown) { user.conversation_mode = "resting"; user.conversationClosed = true; }
@@ -1276,6 +1291,9 @@ app.post("/webhook", async (req, res) => {
     // ✅ UPDATED: Pass replyId vào sendBurstReplies
     await sendBurstReplies(user, chatId, cleanReplyText, replyId);
     await logBotMessage(message.from.id, cleanReplyText);
+    // ✅ Save bot message to Supabase
+    saveMessage(chatId, { role: "bot", content: cleanReplyText, strategy: strategy || null, stage: user.stages?.current || 1 })
+      .catch(e => console.log("saveMessage bot error:", e.message));
 
     // Send asset
     if (assetMarkers.hasAsset && !(user.wind_down && user.conversation_mode !== "selling")) {
@@ -1387,6 +1405,9 @@ async function processUserMessage(chatId, text, user) {
   // Queue messages don't have original messageId, so no quote reply
   await sendBurstReplies(user, chatId, cleanReplyText, null);
   await logBotMessage(chatId, cleanReplyText);
+  // ✅ Save bot message to Supabase
+  saveMessage(chatId, { role: "bot", content: cleanReplyText, stage: user.stages?.current || 1 })
+    .catch(e => console.log("saveMessage bot error:", e.message));
 
   user.recentMessages.push(`Aurelia: ${cleanReplyText}`);
   if (user.recentMessages.length > 12) user.recentMessages.shift();
@@ -1420,6 +1441,124 @@ async function checkAndSendPendingConfirmations() {
 setInterval(checkAndSendPendingConfirmations, 5 * 60 * 1000);
 
 /* ================== SERVER ================== */
+
+
+// Helper for dashboard API to send messages
+async function sendTelegramMessage(chatId, text) {
+  const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+  });
+  if (!res.ok) throw new Error(`Telegram error: ${res.status}`);
+  return res.json();
+}
+
+
+// ============================================================
+// DASHBOARD APIs
+// ============================================================
+
+// GET all fan profiles
+app.get("/api/fans", async (req, res) => {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+  const { data } = await sb.from("fan_profiles").select("*").order("last_active", { ascending: false }).limit(100);
+  res.json(data || []);
+});
+
+// GET messages for a fan
+app.get("/api/messages/:chatId", async (req, res) => {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+  const { data } = await sb.from("messages").select("*")
+    .eq("chat_id", req.params.chatId)
+    .order("created_at", { ascending: true })
+    .limit(200);
+  res.json(data || []);
+});
+
+// GET memories for a fan
+app.get("/api/memories/:chatId", async (req, res) => {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+  const { data } = await sb.from("fan_memories").select("*")
+    .eq("chat_id", req.params.chatId)
+    .order("importance", { ascending: false })
+    .limit(30);
+  res.json(data || []);
+});
+
+// GET purchases
+app.get("/api/purchases", async (req, res) => {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+  const q = sb.from("purchases").select("*").order("created_at", { ascending: false }).limit(100);
+  if (req.query.chat_id) q.eq("chat_id", req.query.chat_id);
+  const { data } = await q;
+  res.json(data || []);
+});
+
+// POST admin send message (Human Takeover)
+app.post("/api/send", async (req, res) => {
+  const { chatId, text } = req.body;
+  if (!chatId || !text) return res.status(400).json({ error: "Missing chatId or text" });
+  try {
+    await sendTelegramMessage(chatId, text);
+    await saveMessage(chatId, { role: "admin", content: text, stage: null });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST toggle takeover
+app.post("/api/takeover", async (req, res) => {
+  const { chatId, active } = req.body;
+  if (!chatId) return res.status(400).json({ error: "Missing chatId" });
+  await setTakeover(chatId, active);
+  res.json({ ok: true, chatId, active });
+});
+
+// GET stats
+app.get("/api/stats", async (req, res) => {
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+  const [fans, purchases, memories] = await Promise.all([
+    sb.from("fan_profiles").select("*", { count: "exact", head: false }),
+    sb.from("purchases").select("amount, created_at"),
+    sb.from("fan_memories").select("id", { count: "exact", head: true }),
+  ]);
+  const totalRevenue = (purchases.data || []).reduce((s, p) => s + (p.amount || 0), 0);
+  const supporters = (fans.data || []).filter(f => f.relationship_state === "supporter").length;
+  res.json({
+    totalFans: fans.data?.length || 0,
+    totalRevenue: totalRevenue.toFixed(2),
+    supporters,
+    totalMemories: memories.count || 0,
+    totalPurchases: purchases.data?.length || 0,
+  });
+});
+
+
+// ============================================================
+// DASHBOARD ROUTE
+// ============================================================
+
+app.get("/dashboard", (req, res) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL || '';
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+    let html = readFileSync(path.join(__dirname, "dashboard.html"), "utf8");
+    html = html
+      .replace("const SUPABASE_URL = window.SUPABASE_URL || '';", `const SUPABASE_URL = '${supabaseUrl}';`)
+      .replace("const SUPABASE_KEY = window.SUPABASE_KEY || ''; // dùng publishable key (anon)", `const SUPABASE_KEY = '${supabaseKey}';`);
+    res.send(html);
+  } catch(e) {
+    res.status(500).send('Dashboard error: ' + e.message);
+  }
+});
+
 app.listen(port, () => console.log(`🌸 Aurelia running on port ${port}`));
 
 export { buildContextPrompt, buildOpenAIPrompt, buildGrokPrompt };
