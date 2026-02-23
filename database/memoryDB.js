@@ -1,16 +1,25 @@
 /**
  * ============================================================
  * MEMORY DB — Supabase integration
- * Thay thế in-memory users object bằng persistent DB
  * ============================================================
  */
 
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
+// Safety check — prevent crash if env vars missing
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+  console.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY");
+}
+
+const supabase = (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY)
+  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
+  : null;
+
+// Helper: check supabase available
+function db() {
+  if (!supabase) throw new Error("Supabase not initialized — check env vars");
+  return supabase;
+}
 
 // ============================================================
 // FAN PROFILE — load/save/update
