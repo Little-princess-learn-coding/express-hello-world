@@ -299,3 +299,66 @@ ${summariesText ? `=== RECENT SESSION SUMMARIES ===\n${summariesText}\n` : ""}
     return null;
   }
 }
+
+// ============================================================
+// MESSAGES — Save và load chat history
+// ============================================================
+
+export async function saveMessage(chatId, { role, content, strategy = null, stage = null }) {
+  if (!db()) return null;
+  try {
+    const { error } = await db()
+      .from("messages")
+      .insert({ chat_id: chatId, role, content, strategy, stage });
+    if (error) console.error("saveMessage error:", error);
+  } catch (e) {
+    console.error("saveMessage exception:", e);
+  }
+}
+
+export async function getMessages(chatId, limit = 50) {
+  if (!db()) return [];
+  try {
+    const { data, error } = await db()
+      .from("messages")
+      .select("*")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true })
+      .limit(limit);
+    if (error) console.error("getMessages error:", error);
+    return data || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// ============================================================
+// TAKEOVER — Admin can pause AI for a specific chat
+// ============================================================
+
+export async function checkTakeover(chatId) {
+  if (!db()) return false;
+  try {
+    const { data } = await db()
+      .from("takeovers")
+      .select("is_active")
+      .eq("chat_id", chatId)
+      .single();
+    return data?.is_active === true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function setTakeover(chatId, isActive) {
+  if (!db()) return;
+  try {
+    await db().from("takeovers").upsert({
+      chat_id: chatId,
+      is_active: isActive,
+      started_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("setTakeover error:", e);
+  }
+}
