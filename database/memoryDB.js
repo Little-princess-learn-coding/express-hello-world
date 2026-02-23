@@ -304,12 +304,12 @@ ${summariesText ? `=== RECENT SESSION SUMMARIES ===\n${summariesText}\n` : ""}
 // MESSAGES — Save và load chat history
 // ============================================================
 
-export async function saveMessage(chatId, { role, content, strategy = null, stage = null }) {
+export async function saveMessage(chatId, { role, content, strategy = null, stage = null, media_type = null, file_id = null }) {
   if (!db()) return null;
   try {
     const { error } = await db()
       .from("messages")
-      .insert({ chat_id: chatId, role, content, strategy, stage });
+      .insert({ chat_id: chatId, role, content, strategy, stage, media_type, file_id });
     if (error) console.error("saveMessage error:", error);
   } catch (e) {
     console.error("saveMessage exception:", e);
