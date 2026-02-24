@@ -44,6 +44,7 @@ import {
   scheduleConfirmation
 } from "./assets/assetEngine.js";
 import { registerAsset, invalidateAssetCache } from "./assets/assetRegistry.js";
+import { getCatalog, invalidateCatalogCache } from "./payment/ppvStore.js";
 
 import {
   sendAsset,
@@ -978,44 +979,48 @@ app.post("/webhook", async (req, res) => {
       const defaults = DEFAULTS[assetType] || {};
 
       // ── Parse key:value từ các dòng sau ──
-      // Ví dụ caption:
+      // Mỗi dòng = 1 cặp key:value → giá trị có thể chứa space thoải mái
+      // Ví dụ:
       // /register food_ramen_01 daily_life
       // scene:food
-      // action:eating
-      // mood:chill
-      const kvPairs = [...firstLine.slice(2)]; // inline params
-      lines.slice(1).forEach(l => { if (l.trim()) kvPairs.push(l.trim()); });
-
+      // desc:Aurelia eating mango bingsu with friends
       const options = { ...defaults };
       const metadata = {};
 
-      kvPairs.forEach(pair => {
-        const colonIdx = pair.indexOf(':');
+      // Collect all lines (dòng 2 trở đi) + inline params từ dòng 1
+      const allLines = [];
+      // Inline params trên dòng 1 (nếu có) — chỉ những param không có space trong value
+      firstLine.slice(2).forEach(p => { if (p.includes(':')) allLines.push(p); });
+      // Các dòng tiếp theo — full line, value có thể chứa space
+      lines.slice(1).forEach(l => { if (l.trim()) allLines.push(l.trim()); });
+
+      allLines.forEach(line => {
+        const colonIdx = line.indexOf(':');
         if (colonIdx === -1) return;
-        const k = pair.substring(0, colonIdx).trim();
-        const v = pair.substring(colonIdx + 1).trim();
+        const k = line.substring(0, colonIdx).trim().toLowerCase();
+        const v = line.substring(colonIdx + 1).trim(); // giữ toàn bộ phần sau dấu :
 
         // Options
-        if (k === 'ttl')           options.ttl = parseInt(v);
-        else if (k === 'strategy') options.strategy_id = parseInt(v);
-        else if (k === 'linked_gift') options.linked_gift_id = v;
-        else if (k === 'states')   options.allowed_states = v.split(',');
-        else if (k === 'support')  options.requires_support = v === 'true';
-        else if (k === 'reusable') options.reusable_per_user = v === 'true';
-        else if (k === 'delete')   options.auto_delete = v === 'true';
-        else if (k === 'delay')    metadata.delay_minutes = parseInt(v);
-        // Metadata
-        else if (k === 'scene')       metadata.scene = v;
-        else if (k === 'action')      metadata.action = v;
-        else if (k === 'mood')        metadata.mood = v;
-        else if (k === 'tease')       metadata.tease_level = v;
-        else if (k === 'exclusive')   metadata.exclusivity_level = v;
-        else if (k === 'emotion')     metadata.emotion = v;
-        else if (k === 'intensity')   metadata.intensity = v;
-        else if (k === 'tone')        metadata.tone = v;
-        else if (k === 'context')     metadata.context = v;
-        else if (k === 'desc')        metadata.description = v;
-        // Fallback — bất kỳ key nào khác đều vào metadata
+        if      (k === 'ttl')          options.ttl = parseInt(v);
+        else if (k === 'strategy')     options.strategy_id = parseInt(v);
+        else if (k === 'linked_gift')  options.linked_gift_id = v;
+        else if (k === 'states')       options.allowed_states = v.split(',');
+        else if (k === 'support')      options.requires_support = v === 'true';
+        else if (k === 'reusable')     options.reusable_per_user = v === 'true';
+        else if (k === 'delete')       options.auto_delete = v === 'true';
+        else if (k === 'delay')        metadata.delay_minutes = parseInt(v);
+        // Metadata — value giữ nguyên kể cả có space
+        else if (k === 'scene')        metadata.scene = v;
+        else if (k === 'action')       metadata.action = v;
+        else if (k === 'mood')         metadata.mood = v;
+        else if (k === 'tease')        metadata.tease_level = v;
+        else if (k === 'exclusive')    metadata.exclusivity_level = v;
+        else if (k === 'emotion')      metadata.emotion = v;
+        else if (k === 'intensity')    metadata.intensity = v;
+        else if (k === 'tone')         metadata.tone = v;
+        else if (k === 'context')      metadata.context = v;
+        else if (k === 'desc')         metadata.description = v; // full text, không bị cắt
+        // Fallback
         else metadata[k] = v;
       });
 
@@ -1061,6 +1066,121 @@ app.post("/webhook", async (req, res) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: post.chat.id, text: confirmText }),
+      });
+      return res.sendStatus(200);
+    }
+
+    // ── /ppv_preview — Tạo hoặc update PPV product với ảnh preview ──
+    // Format:
+    // /ppv_preview red_kitty
+    // name:Cute little kitty in red ꒦˘∪꒷
+    // price:35
+    // desc:6 pics exclusive cosplay
+    if (caption.startsWith('/ppv_preview')) {
+      const lines = caption.split('\n');
+      const firstParts = lines[0].replace('/ppv_preview', '').trim().split(/\s+/);
+      const productId = firstParts[0];
+
+      if (!productId) {
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Format: /ppv_preview product_id\nname:...\nprice:...\ndesc:...' }),
+        });
+        return res.sendStatus(200);
+      }
+
+      // Parse key:value
+      const kv = {};
+      lines.slice(1).forEach(l => {
+        const ci = l.indexOf(':');
+        if (ci === -1) return;
+        kv[l.substring(0, ci).trim()] = l.substring(ci + 1).trim();
+      });
+
+      // Lấy preview file_id
+      const previewFileId = post.photo ? post.photo[post.photo.length - 1].file_id : null;
+      if (!previewFileId) {
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Cần gửi kèm ảnh preview!' }),
+        });
+        return res.sendStatus(200);
+      }
+
+      // Upsert vào Supabase
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+      const { error } = await supabase.from('ppv_products').upsert({
+        product_id: productId,
+        name: kv.name || productId,
+        description: kv.desc || kv.description || '',
+        price: parseFloat(kv.price || '0'),
+        preview_photo_id: previewFileId,
+        delivery_type: 'telegram_album',
+        is_active: true,
+      }, { onConflict: 'product_id' });
+
+      invalidateCatalogCache();
+
+      const confirmText = error
+        ? `❌ Lỗi: ${error.message}`
+        : `✅ PPV Product created!\n\n📦 ${productId}\n💰 $${kv.price}\n📝 ${kv.name}\n🖼 Preview: set\n\nGiờ up từng ảnh album với caption:\n/ppv_photo ${productId}`;
+
+      await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: post.chat.id, text: confirmText }),
+      });
+      return res.sendStatus(200);
+    }
+
+    // ── /ppv_photo — Thêm ảnh vào album của PPV product ──
+    // Format: /ppv_photo red_kitty
+    if (caption.startsWith('/ppv_photo')) {
+      const productId = caption.replace('/ppv_photo', '').trim().split(/\s+/)[0];
+
+      if (!productId) {
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Format: /ppv_photo product_id' }),
+        });
+        return res.sendStatus(200);
+      }
+
+      const photoFileId = post.photo ? post.photo[post.photo.length - 1].file_id
+        : post.video ? post.video.file_id
+        : null;
+
+      if (!photoFileId) {
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Cần gửi kèm ảnh hoặc video!' }),
+        });
+        return res.sendStatus(200);
+      }
+
+      // Append file_id vào photo_ids array
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+      // Lấy product hiện tại
+      const { data: existing } = await supabase.from('ppv_products').select('photo_ids, name').eq('product_id', productId).single();
+      if (!existing) {
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: post.chat.id, text: `❌ Product "${productId}" chưa tồn tại. Tạo preview trước bằng /ppv_preview` }),
+        });
+        return res.sendStatus(200);
+      }
+
+      const currentIds = existing.photo_ids || [];
+      const newIds = [...currentIds, photoFileId];
+
+      await supabase.from('ppv_products').update({ photo_ids: newIds, photo_count: newIds.length }).eq('product_id', productId);
+      invalidateCatalogCache();
+
+      await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: post.chat.id, text: `✅ Photo added!\n\n📦 ${productId} — "${existing.name}"\n🖼 Total photos: ${newIds.length}` }),
       });
       return res.sendStatus(200);
     }
