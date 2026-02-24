@@ -1134,7 +1134,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     // ── /ppv_photo — Thêm ảnh vào album của PPV product ──
-    // Format: /ppv_photo red_kitty
+    // Format: /ppv_photo red_kitty  (hỗ trợ gửi nhiều ảnh cùng lúc)
     if (caption.startsWith('/ppv_photo')) {
       const productId = caption.replace('/ppv_photo', '').trim().split(/\s+/)[0];
 
@@ -1158,12 +1158,10 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      // Append file_id vào photo_ids array
       const { createClient } = await import('@supabase/supabase-js');
       const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-
-      // Lấy product hiện tại
       const { data: existing } = await supabase.from('ppv_products').select('photo_ids, name').eq('product_id', productId).single();
+
       if (!existing) {
         await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1172,15 +1170,45 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      const currentIds = existing.photo_ids || [];
-      const newIds = [...currentIds, photoFileId];
+      // ── Media group: gom nhiều ảnh rồi bulk update ──
+      const mediaGroupId = post.media_group_id;
+      if (mediaGroupId) {
+        if (!global._ppvPhotoBuffer) global._ppvPhotoBuffer = {};
+        const bufKey = `${productId}_${mediaGroupId}`;
 
+        if (!global._ppvPhotoBuffer[bufKey]) {
+          global._ppvPhotoBuffer[bufKey] = { fileIds: [], timer: null, productId, chatId: post.chat.id, albumName: existing.name };
+        }
+        global._ppvPhotoBuffer[bufKey].fileIds.push(photoFileId);
+
+        // Debounce 2s — đợi ảnh cuối cùng trong group xong mới lưu
+        clearTimeout(global._ppvPhotoBuffer[bufKey].timer);
+        global._ppvPhotoBuffer[bufKey].timer = setTimeout(async () => {
+          const buf = global._ppvPhotoBuffer[bufKey];
+          delete global._ppvPhotoBuffer[bufKey];
+
+          const { data: fresh } = await supabase.from('ppv_products').select('photo_ids').eq('product_id', buf.productId).single();
+          const newIds = [...(fresh?.photo_ids || []), ...buf.fileIds];
+          await supabase.from('ppv_products').update({ photo_ids: newIds, photo_count: newIds.length }).eq('product_id', buf.productId);
+          invalidateCatalogCache();
+
+          await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: buf.chatId, text: `✅ ${buf.fileIds.length} photos added!\n\n📦 ${buf.productId} — "${buf.albumName}"\n🖼 Total: ${newIds.length} photos` }),
+          });
+        }, 2000);
+
+        return res.sendStatus(200);
+      }
+
+      // ── Single photo ──
+      const newIds = [...(existing.photo_ids || []), photoFileId];
       await supabase.from('ppv_products').update({ photo_ids: newIds, photo_count: newIds.length }).eq('product_id', productId);
       invalidateCatalogCache();
 
       await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: post.chat.id, text: `✅ Photo added!\n\n📦 ${productId} — "${existing.name}"\n🖼 Total photos: ${newIds.length}` }),
+        body: JSON.stringify({ chat_id: post.chat.id, text: `✅ Photo added!\n\n📦 ${productId} — "${existing.name}"\n🖼 Total: ${newIds.length} photos` }),
       });
       return res.sendStatus(200);
     }
@@ -1370,9 +1398,10 @@ app.post("/webhook", async (req, res) => {
       // ✅ NEW: Gửi album preview sau khi bot reply stage 5A
       // Chọn album phù hợp hoặc album đầu tiên trong catalog
       await sleep(2000);
-      const catalogIds = Object.keys(CATALOG);
+      const catalog = await getCatalog();
+      const catalogIds = Object.keys(catalog);
       if (catalogIds.length > 0) {
-        const albumToOffer = catalogIds[0]; // Có thể random hoặc chọn theo context
+        const albumToOffer = catalogIds[0];
         await sendAlbumPreview(chatId, albumToOffer);
       }
 
