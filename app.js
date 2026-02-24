@@ -1066,10 +1066,10 @@ app.post("/webhook", async (req, res) => {
     }
 
     // Log file_id như cũ (nếu không phải /register)
-    const photos = post.photo || [];
-    const fileId = photos.length > 0 ? photos[photos.length - 1].file_id : null;
-    const caption = req.body.channel_post.caption || "(no caption)";
-    console.log(`📸 NEW PHOTO file_id: ${fileId} | caption: ${caption}`);
+    const logPhotos = post.photo || [];
+    const logFileId = logPhotos.length > 0 ? logPhotos[logPhotos.length - 1].file_id : null;
+    const logCaption = post.caption || "(no caption)";
+    console.log(`📸 NEW PHOTO file_id: ${logFileId} | caption: ${logCaption}`);
     return res.sendStatus(200);
   }
 
@@ -1085,14 +1085,14 @@ app.post("/webhook", async (req, res) => {
   // ✅ Handle fan sending photo
   if (message.photo && !message.text) {
     const chatId = message.chat.id;
-    const fileId = message.photo[message.photo.length - 1].file_id;
-    const caption = message.caption || '';
+    const fanPhotoFileId = message.photo[message.photo.length - 1].file_id;
+    const fanPhotoCaption = message.caption || '';
     // Save photo message to DB
     saveMessage(chatId, {
       role: 'fan',
-      content: caption || '[photo]',
+      content: fanPhotoCaption || '[photo]',
       media_type: 'photo',
-      file_id: fileId,
+      file_id: fanPhotoFileId,
       stage: users[chatId]?.stages?.current || 1,
     }).catch(() => {});
     return res.sendStatus(200);
