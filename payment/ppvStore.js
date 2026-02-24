@@ -14,16 +14,11 @@
 
 import fetch from "node-fetch";
 import crypto from "crypto";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { createClient } from "@supabase/supabase-js";
 import { onSaleSuccess } from "../state/userState.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const TOKEN = process.env.TELEGRAM_AURELIABOT_TOKEN;
-const BASE_URL = process.env.BASE_URL; // https://yourdomain.com
+const BASE_URL = process.env.BASE_URL;
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
 const PAYPAL_MODE = process.env.PAYPAL_MODE || "live";
@@ -31,28 +26,74 @@ const PAYPAL_API = PAYPAL_MODE === "sandbox" ? "https://api-m.sandbox.paypal.com
 const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
 const NOWPAYMENTS_IPN_SECRET = process.env.NOWPAYMENTS_IPN_SECRET;
 
+const getSupabase = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
 // ============================================================
-// 📦 CATALOG — Điền album thật của Aurelia vào đây
+// 📦 CATALOG — Đọc từ Supabase, cache trong RAM
 // ============================================================
-export const CATALOG = {
-  "red_kitty": {
-    id: "red_kitty",
-    name: "Cute little kitty in red ꒦˘∪꒷",
-    description: "6 pics",
-    photoCount: 6,
-    price: 35,
-    deliveryType: "telegram_album",  // ← quan trọng
-    photoIds: [
-      "AgACAgUAAyEFAATnyo_qAAMDaZk8WIy2z4HBqXTG3606omUtdeEAApYNaxtKa8hUsB52DjoYKu8BAAMCAAN5AAM6BA",  // ảnh 1
-      "AgACAgUAAyEFAATnyo_qAAMGaZk8WFV5kPS1VAgsB0EyTPxEK9gAApUNaxtKa8hUyvFSVbMC2GYBAAMCAAN5AAM6BA",  // ảnh 2
-      "AgACAgUAAyEFAATnyo_qAAMFaZk8WP2-tKojKJpSnKJXk-7IFSQAApMNaxtKa8hUCFaoC55vLqkBAAMCAAN5AAM6BA",
-      "AgACAgUAAyEFAATnyo_qAAMEaZk8WPmys0XAPVNMF1uu5LxudV4AApENaxtKa8hUvsQ4no_VDP8BAAMCAAN5AAM6BA",
-      "AgACAgUAAyEFAATnyo_qAAMHaZk8WGrF29UDhtpR5OIavHNZDXgAApINaxtKa8hUM5manuBCKEgBAAMCAAN5AAM6BA",
-      "AgACAgUAAyEFAATnyo_qAAMIaZk8WL1PX4VzogjNoOYFOjEGdeIAApQNaxtKa8hUYJu_SZbxFtwBAAMCAAN5AAM6BA",
-    ],
-    previewPhotoId: "AgACAgUAAyEFAATnyo_qAAMVaZlMQO8uDn7YpwpYDvEhbwIanA0AAqwNaxtKa8hUe5dqfcbVwjkBAAMCAAN5AAM6BA", // ảnh preview hiện khi bot đề xuất
+let _catalogCache = null;
+let _catalogCachedAt = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 phút
+
+export async function getCatalog() {
+  const now = Date.now();
+  if (_catalogCache && now - _catalogCachedAt < CACHE_TTL_MS) return _catalogCache;
+
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("ppv_products")
+    .select("*")
+    .eq("is_active", true);
+
+  if (error) {
+    console.error("❌ Failed to load catalog from Supabase:", error.message);
+    return _catalogCache || {};
+  }
+
+  // Convert array → object keyed by product_id (giống CATALOG cũ)
+  const catalog = {};
+  for (const row of data) {
+    catalog[row.product_id] = {
+      id: row.product_id,
+      name: row.name,
+      description: row.description,
+      photoCount: row.photo_count,
+      price: parseFloat(row.price),
+      deliveryType: row.delivery_type || "telegram_album",
+      photoIds: row.photo_ids || [],
+      previewPhotoId: row.preview_photo_id,
+    };
+  }
+
+  _catalogCache = catalog;
+  _catalogCachedAt = now;
+  console.log(`📦 Catalog loaded: ${data.length} products`);
+  return catalog;
+}
+
+export function invalidateCatalogCache() {
+  _catalogCache = null;
+  _catalogCachedAt = 0;
+  console.log("🔄 Catalog cache cleared");
+}
+
+// Backward-compat: CATALOG object (sync, dùng cache hiện tại hoặc {})
+// app.js dùng CATALOG trực tiếp ở 1 chỗ — giờ nên dùng getCatalog() thay thế
+export const CATALOG = new Proxy({}, {
+  get(_, key) {
+    return _catalogCache?.[key];
   },
-};
+  ownKeys() {
+    return Object.keys(_catalogCache || {});
+  },
+  has(_, key) {
+    return key in (_catalogCache || {});
+  },
+  getOwnPropertyDescriptor(_, key) {
+    if (_catalogCache && key in _catalogCache)
+      return { enumerable: true, configurable: true, value: _catalogCache[key] };
+  }
+});
 
 // ============================================================
 // 🛒 CART & ORDER STATE
@@ -76,7 +117,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // 🖼️ GỬI ALBUM PREVIEW (giống Miyurin bot - ảnh + caption + buttons)
 // ============================================================
 export async function sendAlbumPreview(chatId, productId) {
-  const product = CATALOG[productId];
+  const catalog = await getCatalog();
+  const product = catalog[productId];
   if (!product) return;
 
   const caption =
@@ -87,29 +129,20 @@ export async function sendAlbumPreview(chatId, productId) {
   const keyboard = {
     inline_keyboard: [
       [{ text: `💳  Buy now ($${product.price.toFixed(2)})`, callback_data: `buy_now:${productId}` }],
-      [{ text: "◀️  Back to shop", callback_data: "shop_home" }],
     ],
   };
 
-  // Gửi ảnh preview kèm caption và buttons
-  const previewPath = path.resolve(__dirname, "..", product.previewPhoto);
-
-  if (fs.existsSync(previewPath)) {
-    // Gửi ảnh dạng file stream
-    const FormData = (await import("form-data")).default;
-    const form = new FormData();
-    form.append("chat_id", chatId.toString());
-    form.append("caption", caption);
-    form.append("parse_mode", "Markdown");
-    form.append("reply_markup", JSON.stringify(keyboard));
-    form.append("photo", fs.createReadStream(previewPath));
-
-    await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, {
-      method: "POST",
-      body: form,
+  if (product.previewPhotoId) {
+    // Gửi ảnh preview bằng file_id từ Supabase
+    await tg("sendPhoto", {
+      chat_id: chatId,
+      photo: product.previewPhotoId,
+      caption,
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
     });
   } else {
-    // Fallback: gửi text nếu không có ảnh
+    // Fallback: text nếu chưa có preview
     await tg("sendMessage", {
       chat_id: chatId,
       text: caption,
@@ -125,8 +158,9 @@ export async function sendAlbumPreview(chatId, productId) {
 // 🏪 SHOP HOME — Danh sách tất cả album
 // ============================================================
 export async function sendShopHome(chatId) {
+  const catalog = await getCatalog();
   const keyboard = {
-    inline_keyboard: Object.values(CATALOG).map(p => ([
+    inline_keyboard: Object.values(catalog).map(p => ([
       { text: `📸 ${p.name} — $${p.price.toFixed(2)}`, callback_data: `view_product:${p.id}` }
     ]))
   };
@@ -143,7 +177,8 @@ export async function sendShopHome(chatId) {
 // 💳 GỬI PAYMENT OPTIONS (giống ảnh 2 - Crypto / PayPal / Back)
 // ============================================================
 async function sendPaymentOptions(chatId, productId) {
-  const product = CATALOG[productId];
+  const catalog = await getCatalog();
+  const product = catalog[productId];
   if (!product) return;
 
   await tg("sendMessage", {
@@ -164,7 +199,8 @@ async function sendPaymentOptions(chatId, productId) {
 // 🛒 CART FLOW
 // ============================================================
 async function handleCartAdd(chatId, productId, callbackQueryId) {
-  const product = CATALOG[productId];
+  const catalog = await getCatalog();
+  const product = catalog[productId];
   if (!product) return;
 
   carts.set(chatId, productId);
@@ -194,7 +230,8 @@ async function handleCartAdd(chatId, productId, callbackQueryId) {
 // 💰 PAYPAL — Tạo order + gửi link
 // ============================================================
 async function handlePayPalPayment(chatId, productId, callbackQueryId) {
-  const product = CATALOG[productId];
+  const catalog = await getCatalog();
+  const product = catalog[productId];
   if (!product) return;
 
   await tg("answerCallbackQuery", { callback_query_id: callbackQueryId, text: "Creating PayPal order..." });
@@ -258,7 +295,8 @@ async function handlePayPalPayment(chatId, productId, callbackQueryId) {
 // 🔐 CRYPTO — Tạo payment + gửi địa chỉ
 // ============================================================
 async function handleCryptoPayment(chatId, productId, callbackQueryId) {
-  const product = CATALOG[productId];
+  const catalog = await getCatalog();
+  const product = catalog[productId];
   if (!product) return;
 
   await tg("answerCallbackQuery", { callback_query_id: callbackQueryId, text: "Creating crypto payment..." });
@@ -285,7 +323,8 @@ async function handleCryptoPayment(chatId, productId, callbackQueryId) {
 }
 
 async function handleCryptoCoin(chatId, productId, coin, callbackQueryId) {
-  const product = CATALOG[productId];
+  const catalog = await getCatalog();
+  const product = catalog[productId];
   if (!product) return;
 
   await tg("answerCallbackQuery", { callback_query_id: callbackQueryId, text: `Creating ${coin.toUpperCase()} payment...` });
@@ -343,7 +382,8 @@ async function handleCryptoCoin(chatId, productId, coin, callbackQueryId) {
 // ✅ DELIVER CONTENT — Gửi file sau khi thanh toán xong
 // ============================================================
 export async function deliverContent(chatId, productId, method, paymentRef, users = null) {
-  const product = CATALOG[productId];
+  const catalog = await getCatalog();
+  const product = catalog[productId];
   if (!product) { console.error(`Product not found: ${productId}`); return; }
 
   console.log(`📦 Delivering ${product.name} to ${chatId} (${method})`);
@@ -365,26 +405,25 @@ export async function deliverContent(chatId, productId, method, paymentRef, user
       await sleep(1000 + Math.random() * 800);
     }
 
-    // 2. Gửi file
-    const filePath = path.resolve(__dirname, "..", product.filePath);
-    if (!fs.existsSync(filePath)) {
-      console.error(`File not found: ${filePath}`);
+    // 2. Gửi album bằng photoIds từ Supabase
+    const photoIds = product.photoIds || [];
+    if (photoIds.length === 0) {
+      console.error(`No photos for product: ${productId}`);
       await tg("sendMessage", { chat_id: chatId, text: "i'll send it manually in a sec! 🌸" });
       return;
     }
 
-    const FormData = (await import("form-data")).default;
-    const form = new FormData();
-    form.append("chat_id", chatId.toString());
-    form.append("caption", `✨ ${product.name}\n\nEnjoy~ 💕`);
-
-    if (product.fileType === "mp4") {
-      form.append("video", fs.createReadStream(filePath));
-      form.append("supports_streaming", "true");
-      await fetch(`https://api.telegram.org/bot${TOKEN}/sendVideo`, { method: "POST", body: form });
-    } else {
-      form.append("document", fs.createReadStream(filePath));
-      await fetch(`https://api.telegram.org/bot${TOKEN}/sendDocument`, { method: "POST", body: form });
+    // Telegram sendMediaGroup — tối đa 10 ảnh/lần
+    const BATCH = 10;
+    for (let i = 0; i < photoIds.length; i += BATCH) {
+      const batch = photoIds.slice(i, i + BATCH);
+      const media = batch.map((fileId, idx) => ({
+        type: "photo",
+        media: fileId,
+        ...(i === 0 && idx === 0 ? { caption: `✨ ${product.name}\n\nEnjoy~ 💕` } : {}),
+      }));
+      await tg("sendMediaGroup", { chat_id: chatId, media });
+      if (i + BATCH < photoIds.length) await sleep(1500);
     }
 
     // 3. Follow-up
