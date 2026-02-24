@@ -47,6 +47,16 @@ export const MEME_REGISTRY = {
 };
 
 // ============================================================
+// DEFAULT TTL (giây) theo asset type — fallback khi Supabase thiếu ttl
+// ============================================================
+const DEFAULT_TTL_BY_TYPE = {
+  daily_life:       30, 
+  tease_selfie:     25,
+  exclusive_selfie: 25,
+  confirmation:     null,  // không auto-delete theo ttl
+};
+
+// ============================================================
 // IN-MEMORY CACHE — tránh query Supabase liên tục
 // ============================================================
 let _cache = null;
@@ -75,7 +85,7 @@ async function getSupabaseAssets() {
         auto_delete: asset.auto_delete,
         allowed_states: asset.allowed_states || ["casual", "supporter"],
         requires_support: asset.requires_support || false,
-        ttl: asset.ttl,
+        ttl: asset.ttl ?? DEFAULT_TTL_BY_TYPE[asset.asset_type] ?? null,
         strategy_id: asset.strategy_id,
         linked_gift_id: asset.linked_gift_id,
       };
@@ -154,7 +164,7 @@ export async function registerAsset({ assetId, assetType, fileId, mediaType = "p
         auto_delete: options.auto_delete ?? true,
         allowed_states: options.allowed_states ?? ["casual", "supporter"],
         requires_support: options.requires_support ?? false,
-        ttl: options.ttl ?? null,
+        ttl: options.ttl ?? DEFAULT_TTL_BY_TYPE[assetType] ?? null,
         strategy_id: options.strategy_id ?? null,
         linked_gift_id: options.linked_gift_id ?? null,
         is_active: true,
