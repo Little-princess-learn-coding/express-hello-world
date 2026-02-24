@@ -43,6 +43,7 @@ import {
   getPendingConfirmations,
   scheduleConfirmation
 } from "./assets/assetEngine.js";
+import { registerAsset, invalidateAssetCache } from "./assets/assetRegistry.js";
 
 import {
   sendAsset,
@@ -942,9 +943,131 @@ function decideModel(user, intentData) {
 /* ================== WEBHOOK ================== */
 app.post("/webhook", async (req, res) => {
   // ✅ TẠM THỜI: Log file_id ảnh từ channel (xóa sau khi lấy xong file_id)
-  if (req.body.channel_post?.photo) {
-    const photos = req.body.channel_post.photo;
-    const fileId = photos[photos.length - 1].file_id;
+  if (req.body.channel_post?.photo || req.body.channel_post?.video || req.body.channel_post?.document) {
+    const post = req.body.channel_post;
+    const caption = post.caption || '';
+
+    // ✅ /register command — format: /register asset_id asset_type [options]
+    // Ví dụ: /register food_ramen_01 daily_life
+    //         /register flirt_1 tease_selfie ttl:25
+    //         /register nails_pink_received confirmation linked_gift:nails_pink
+    if (caption.startsWith('/register')) {
+      const lines = caption.split('\n');
+      const firstLine = lines[0].replace('/register', '').trim().split(/\s+/);
+      const assetId = firstLine[0];
+      const assetType = firstLine[1];
+
+      if (!assetId || !assetType) {
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Format sai!\n\nDùng:\n/register asset_id asset_type\nkey:value\nkey:value' }),
+        });
+        return res.sendStatus(200);
+      }
+
+      // ── DEFAULT metadata theo type ──
+      const DEFAULTS = {
+        daily_life:   { reusable_per_user: false, auto_delete: true,  allowed_states: ['casual','supporter'], requires_support: false, send_delay_required: false },
+        confirmation: { reusable_per_user: false, auto_delete: false, allowed_states: ['casual','supporter'], requires_support: true,  send_delay_required: true  },
+        gift:         { reusable_per_user: false, auto_delete: false, allowed_states: ['casual','supporter'], requires_support: true,  send_delay_required: false },
+        tease_selfie: { reusable_per_user: false, auto_delete: true,  allowed_states: ['supporter'],          requires_support: false, send_delay_required: false, ttl: 25 },
+        exclusive_selfie: { reusable_per_user: false, auto_delete: true, allowed_states: ['supporter'],       requires_support: true,  send_delay_required: false, ttl: 25 },
+        video:        { reusable_per_user: false, auto_delete: true,  allowed_states: ['casual','supporter'], requires_support: false, send_delay_required: false },
+      };
+
+      const defaults = DEFAULTS[assetType] || {};
+
+      // ── Parse key:value từ các dòng sau ──
+      // Ví dụ caption:
+      // /register food_ramen_01 daily_life
+      // scene:food
+      // action:eating
+      // mood:chill
+      const kvPairs = [...firstLine.slice(2)]; // inline params
+      lines.slice(1).forEach(l => { if (l.trim()) kvPairs.push(l.trim()); });
+
+      const options = { ...defaults };
+      const metadata = {};
+
+      kvPairs.forEach(pair => {
+        const colonIdx = pair.indexOf(':');
+        if (colonIdx === -1) return;
+        const k = pair.substring(0, colonIdx).trim();
+        const v = pair.substring(colonIdx + 1).trim();
+
+        // Options
+        if (k === 'ttl')           options.ttl = parseInt(v);
+        else if (k === 'strategy') options.strategy_id = parseInt(v);
+        else if (k === 'linked_gift') options.linked_gift_id = v;
+        else if (k === 'states')   options.allowed_states = v.split(',');
+        else if (k === 'support')  options.requires_support = v === 'true';
+        else if (k === 'reusable') options.reusable_per_user = v === 'true';
+        else if (k === 'delete')   options.auto_delete = v === 'true';
+        else if (k === 'delay')    metadata.delay_minutes = parseInt(v);
+        // Metadata
+        else if (k === 'scene')       metadata.scene = v;
+        else if (k === 'action')      metadata.action = v;
+        else if (k === 'mood')        metadata.mood = v;
+        else if (k === 'tease')       metadata.tease_level = v;
+        else if (k === 'exclusive')   metadata.exclusivity_level = v;
+        else if (k === 'emotion')     metadata.emotion = v;
+        else if (k === 'intensity')   metadata.intensity = v;
+        else if (k === 'tone')        metadata.tone = v;
+        else if (k === 'context')     metadata.context = v;
+        else if (k === 'desc')        metadata.description = v;
+        // Fallback — bất kỳ key nào khác đều vào metadata
+        else metadata[k] = v;
+      });
+
+      // ── Lấy file_id ──
+      let fileId, mediaType;
+      if (post.photo) {
+        fileId = post.photo[post.photo.length - 1].file_id;
+        mediaType = 'photo';
+      } else if (post.video) {
+        fileId = post.video.file_id;
+        mediaType = 'video';
+      } else if (post.document) {
+        fileId = post.document.file_id;
+        mediaType = 'document';
+      }
+
+      if (!fileId) {
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Không tìm thấy file. Hãy gửi ảnh/video kèm caption /register' }),
+        });
+        return res.sendStatus(200);
+      }
+
+      const result = await registerAsset({ assetId, assetType, fileId, mediaType, metadata, options });
+
+      // ── Confirm message ──
+      const metaLines = Object.entries(metadata).map(([k,v]) => `  ${k}: ${v}`).join('\n');
+      const optLines = [
+        `  states: ${options.allowed_states?.join(',')}`,
+        options.ttl ? `  ttl: ${options.ttl}m` : null,
+        options.strategy_id ? `  strategy: ${options.strategy_id}` : null,
+        options.linked_gift_id ? `  linked_gift: ${options.linked_gift_id}` : null,
+        `  auto_delete: ${options.auto_delete}`,
+        `  requires_support: ${options.requires_support}`,
+      ].filter(Boolean).join('\n');
+
+      const confirmText = result.ok
+        ? `✅ Asset registered!\n\n📦 ${assetId}\n🏷 Type: ${assetType}\n📁 Media: ${mediaType}\n\n📋 Metadata:\n${metaLines || '  (none)'}\n\n⚙️ Options:\n${optLines}`
+        : `❌ Failed: ${result.error}`;
+
+      await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: post.chat.id, text: confirmText }),
+      });
+      return res.sendStatus(200);
+    }
+
+    // Log file_id như cũ (nếu không phải /register)
+    const photos = post.photo || [];
+    const fileId = photos.length > 0 ? photos[photos.length - 1].file_id : null;
     const caption = req.body.channel_post.caption || "(no caption)";
     console.log(`📸 NEW PHOTO file_id: ${fileId} | caption: ${caption}`);
     return res.sendStatus(200);
