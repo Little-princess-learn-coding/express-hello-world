@@ -941,27 +941,6 @@ function decideModel(user, intentData) {
   return "openai";
 }
 
-/* ================== AUTO-DELETE HELPER ================== */
-async function scheduleMessageDelete(chatId, messageId, ttlSeconds) {
-  setTimeout(async () => {
-    try {
-      const res = await fetch(
-        `https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/deleteMessage`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
-        }
-      );
-      const data = await res.json();
-      if (data.ok) console.log(`🗑️ Auto-deleted message ${messageId} for ${chatId} after ${ttlSeconds}s`);
-      else console.warn(`⚠️ Delete failed for message ${messageId}: ${data.description}`);
-    } catch (e) {
-      console.error(`❌ scheduleMessageDelete error:`, e.message);
-    }
-  }, ttlSeconds * 1000);
-}
-
 /* ================== WEBHOOK ================== */
 app.post("/webhook", async (req, res) => {
   // ✅ TẠM THỜI: Log file_id ảnh từ channel (xóa sau khi lấy xong file_id)
@@ -1625,21 +1604,21 @@ app.post("/webhook", async (req, res) => {
       if (assetData) {
         const { asset, shouldScheduleConfirmation, shouldSendImage } = assetData;
         if (shouldSendImage) {
+          // Gửi ảnh bình thường
           await sendUploadPhoto(chatId);
           await sleep(800);
           const sendResult = await sendAsset(chatId, asset);
           if (sendResult?.ok) {
             console.log(`✅ Sent asset ${asset.assetId}`);
-            // Auto-delete nếu asset có ttl
-            const sentMsgId = sendResult.result?.message_id;
-            if (asset.auto_delete && asset.ttl && sentMsgId) {
-              scheduleMessageDelete(chatId, sentMsgId, asset.ttl);
-              console.log(`⏳ Scheduled delete for msg ${sentMsgId} in ${asset.ttl}s`);
-            }
+            // Auto-delete được xử lý bên trong telegramAssets.js (sendPhoto/sendVideo)
           } else console.error(`❌ Failed asset: ${asset.assetId}`);
+        } else {
+          // Text-only gift (food/drink) — không gửi ảnh, chỉ log
+          console.log(`💬 Text-only gift: ${asset.assetId} — no image sent`);
         }
+        // Schedule confirmation nếu có — áp dụng cho cả text-only và image gift
         if (shouldScheduleConfirmation && user.state.totalSaleSuccess > 0) {
-          const confirmation = scheduleConfirmation(chatId, asset.assetId, asset);
+          const confirmation = await scheduleConfirmation(chatId, asset.assetId, asset);
           if (confirmation) console.log(`📅 Scheduled confirmation ${confirmation.confirmationAssetId}`);
         }
       }
@@ -1760,12 +1739,7 @@ async function checkAndSendPendingConfirmations() {
         const result = await sendAsset(chatId, confirmation.asset);
         if (result?.ok) {
           console.log(`✅ Sent confirmation to ${chatId}`);
-          // Auto-delete nếu confirmation có ttl
-          const sentMsgId = result.result?.message_id;
-          if (confirmation.asset.auto_delete && confirmation.asset.ttl && sentMsgId) {
-            scheduleMessageDelete(chatId, sentMsgId, confirmation.asset.ttl);
-            console.log(`⏳ Scheduled delete for confirmation msg ${sentMsgId} in ${confirmation.asset.ttl}s`);
-          }
+          // Auto-delete được xử lý bên trong telegramAssets.js
           await sendBurstReplies(users[chatId], chatId, "Look what I got! 💕 Thank you so much~");
     // ✅ Sync sale success to Supabase
     const u = users[chatId];
