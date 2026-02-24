@@ -1226,6 +1226,11 @@ app.post("/webhook", async (req, res) => {
     user.sale_clarification_pending = false;
   } else if (intentData.saleResponse === "no") {
     onSaleFailure(user.state);
+    // ✅ Sync sale fail to Supabase
+    saveFanProfile(chatId, {
+      total_sale_attempts: (user.state.totalSales || 0),
+      total_sale_fail: (user.state.totalSales || 0) - (user.state.successfulSales || 0),
+    }).catch(() => {});
     user.sale_clarification_pending = false;
     console.log(`❌ Sale declined`);
     if (isTimeWaster(user.state)) { user.conversationClosed = true; return res.sendStatus(200); }
@@ -1456,6 +1461,13 @@ async function checkAndSendPendingConfirmations() {
         if (result?.ok) {
           console.log(`✅ Sent confirmation to ${chatId}`);
           await sendBurstReplies(users[chatId], chatId, "Look what I got! 💕 Thank you so much~");
+    // ✅ Sync sale success to Supabase
+    const u = users[chatId];
+    if (u) saveFanProfile(chatId, {
+      total_sale_attempts: (u.state.totalSales || 0),
+      total_sale_success: (u.state.successfulSales || 0),
+      total_sale_fail: (u.state.totalSales || 0) - (u.state.successfulSales || 0),
+    }).catch(() => {});
         }
       } catch (error) {
         console.error(`❌ Confirmation error for ${chatId}:`, error);
@@ -1540,6 +1552,68 @@ app.get("/api/purchases", async (req, res) => {
   res.json(data || []);
 });
 
+
+// POST admin send photo (Human Takeover)
+app.post("/api/send-photo", async (req, res) => {
+  try {
+    // Parse multipart form data using express built-in
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', async () => {
+      try {
+        const boundary = req.headers['content-type'].split('boundary=')[1];
+        const body = Buffer.concat(chunks);
+        const bodyStr = body.toString('binary');
+
+        // Extract chatId and caption
+        const chatIdMatch = bodyStr.match(/name="chatId"\r\n\r\n([^\r\n]+)/);
+        const captionMatch = bodyStr.match(/name="caption"\r\n\r\n([^\r\n]+)/);
+        const chatId = chatIdMatch ? chatIdMatch[1].trim() : null;
+        const caption = captionMatch ? captionMatch[1].trim() : '';
+
+        if (!chatId) return res.status(400).json({ error: 'Missing chatId' });
+
+        // Extract photo binary
+        const photoStart = bodyStr.indexOf('\r\n\r\n', bodyStr.indexOf('name="photo"')) + 4;
+        const photoEnd = bodyStr.lastIndexOf(`--${boundary}`);
+        const photoBinary = body.slice(
+          Buffer.byteLength(bodyStr.substring(0, photoStart), 'binary'),
+          Buffer.byteLength(bodyStr.substring(0, photoEnd - 2), 'binary')
+        );
+
+        // Send to Telegram via multipart
+        const FormData = (await import('form-data')).default;
+        const form = new FormData();
+        form.append('chat_id', chatId);
+        form.append('photo', photoBinary, { filename: 'photo.jpg', contentType: 'image/jpeg' });
+        if (caption) form.append('caption', caption);
+
+        const tgRes = await fetch(
+          `https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendPhoto`,
+          { method: 'POST', body: form, headers: form.getHeaders() }
+        );
+        const tgData = await tgRes.json();
+        if (!tgData.ok) return res.status(500).json({ error: tgData.description });
+
+        // Save to messages DB
+        const fileId = tgData.result?.photo?.slice(-1)[0]?.file_id;
+        await saveMessage(parseInt(chatId), {
+          role: 'admin',
+          content: caption || '[photo]',
+          media_type: 'photo',
+          file_id: fileId || null,
+        });
+
+        res.json({ ok: true });
+      } catch(e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST admin send message (Human Takeover)
 app.post("/api/send", async (req, res) => {
   const { chatId, text } = req.body;
@@ -1572,12 +1646,20 @@ app.get("/api/stats", async (req, res) => {
   ]);
   const totalRevenue = (purchases.data || []).reduce((s, p) => s + (p.amount || 0), 0);
   const supporters = (fans.data || []).filter(f => f.relationship_state === "supporter").length;
+  const totalSaleSuccess = (fans.data || []).reduce((s, f) => s + (f.total_sale_success || 0), 0);
+  const totalSaleFail = (fans.data || []).reduce((s, f) => s + (f.total_sale_fail || 0), 0);
+  const totalSaleAttempts = totalSaleSuccess + totalSaleFail;
+  const conversionRate = totalSaleAttempts > 0 ? ((totalSaleSuccess / totalSaleAttempts) * 100).toFixed(1) : "0.0";
   res.json({
     totalFans: fans.data?.length || 0,
     totalRevenue: totalRevenue.toFixed(2),
     supporters,
     totalMemories: memories.count || 0,
     totalPurchases: purchases.data?.length || 0,
+    totalSaleSuccess,
+    totalSaleFail,
+    totalSaleAttempts,
+    conversionRate,
   });
 });
 
