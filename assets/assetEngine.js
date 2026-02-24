@@ -1,8 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 
-// Load asset registry
+// Load asset registry — memes vẫn dùng sync require, Supabase assets dùng async API
 const assetRegistry = require('./assetRegistry.js');
+// Supabase async API (new registry)
+let _getConfirmationForGift = null;
+import('./assetRegistry.js').then(m => {
+  _getConfirmationForGift = m.getConfirmationForGift;
+}).catch(e => console.error('assetEngine: failed to load async registry:', e.message));
 
 // Track what assets each user has received
 const userAssetHistory = {};
@@ -150,56 +155,55 @@ function markAssetSent(chatId, assetId) {
 
 /**
  * Schedule post-support confirmation asset
+ * Schema mới (Supabase): confirmation có linked_gift_id trỏ về gift
+ * → dùng getConfirmationForGift(giftAssetId) để tìm đúng confirmation
  * @param {string} chatId - User's chat ID
  * @param {string} giftAssetId - The gift asset ID that was sent
  * @param {object} giftAsset - The complete gift asset object
  */
-function scheduleConfirmation(chatId, giftAssetId, giftAsset) {
+async function scheduleConfirmation(chatId, giftAssetId, giftAsset) {
   const history = initUserAssets(chatId);
-  
-  // Check if this gift has a linked confirmation
-  if (!giftAsset.confirmation_asset_id) {
-    console.log(`⚠️ Gift ${giftAssetId} has no linked confirmation`);
-    return null;
-  }
-  
-  const confirmationAssetId = giftAsset.confirmation_asset_id;
-  
-  // Find the confirmation asset in registry
+
+  // Tìm confirmation asset qua linked_gift_id (Supabase schema mới)
   let confirmationAsset = null;
-  
-  for (const confirmId in assetRegistry.post_support_confirmation) {
-    if (confirmId === confirmationAssetId) {
-      confirmationAsset = assetRegistry.post_support_confirmation[confirmId];
-      break;
+  let confirmationAssetId = null;
+
+  if (_getConfirmationForGift) {
+    // ✅ Supabase path — tìm confirmation có linked_gift_id = giftAssetId
+    const found = await _getConfirmationForGift(giftAssetId);
+    if (found) {
+      confirmationAsset = found;
+      confirmationAssetId = found.asset_id;
+    }
+  } else {
+    // 🔁 Fallback legacy — tìm trong hardcoded registry cũ
+    const legacyId = giftAsset.confirmation_asset_id;
+    if (legacyId && assetRegistry.post_support_confirmation?.[legacyId]) {
+      confirmationAsset = assetRegistry.post_support_confirmation[legacyId];
+      confirmationAssetId = legacyId;
     }
   }
-  
-  if (!confirmationAsset) {
-    console.log(`❌ Confirmation asset ${confirmationAssetId} not found in registry`);
+
+  if (!confirmationAsset || !confirmationAssetId) {
+    console.log(`⚠️ No confirmation found for gift ${giftAssetId}`);
     return null;
   }
-  
-  // Verify the link is correct (double-check)
-  if (confirmationAsset.linked_gift_id !== giftAssetId) {
-    console.log(`⚠️ WARNING: Confirmation ${confirmationAssetId} links to ${confirmationAsset.linked_gift_id} but we sent ${giftAssetId}`);
-    // Still proceed but log the mismatch
-  }
-  
-  const delayMs = confirmationAsset.metadata.delay_minutes * 60 * 1000;
-  
+
+  const delayMinutes = confirmationAsset.metadata?.delay_minutes ?? 0;
+  const delayMs = delayMinutes * 60 * 1000;
+
   history.pending_confirmations.push({
-    confirmationAssetId: confirmationAssetId,
-    giftAssetId: giftAssetId,
+    confirmationAssetId,
+    giftAssetId,
     scheduledFor: Date.now() + delayMs,
     asset: {
       assetId: confirmationAssetId,
       ...confirmationAsset
     }
   });
-  
-  console.log(`✅ Scheduled confirmation ${confirmationAssetId} for gift ${giftAssetId} in ${confirmationAsset.metadata.delay_minutes} minutes`);
-  
+
+  console.log(`✅ Scheduled confirmation ${confirmationAssetId} for gift ${giftAssetId} in ${delayMinutes} minutes`);
+
   return {
     confirmationAssetId,
     giftAssetId,
@@ -339,14 +343,17 @@ function getAssetToSend(markers, strategyId, chatId) {
   if (asset) {
     markAssetSent(chatId, asset.assetId);
     
-    // Check if this is a gift image that needs confirmation scheduling
+    // Check if this gift has a linked confirmation
+    // Schema mới (Supabase): confirmation có linked_gift_id → dùng asset.type === 'gift'
+    // Schema cũ (legacy): gift có confirmation_asset_id
     const shouldScheduleConfirmation = (
-      asset.type === 'gift_image' && 
-      asset.confirmation_asset_id !== undefined
+      asset.type === 'gift' ||
+      (asset.type === 'gift_image' && asset.confirmation_asset_id !== undefined)
     );
     
     // Check if we should actually send the image (for food/drink, might be text-only)
-    const shouldSendImage = asset.send_gift_image !== false; // Default true if not specified
+    // Ưu tiên metadata.send_image (set khi /register), fallback sang send_gift_image (legacy)
+    const shouldSendImage = asset.metadata?.send_image !== false && asset.send_gift_image !== false;
     
     return {
       asset,
