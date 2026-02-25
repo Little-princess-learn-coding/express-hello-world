@@ -41,9 +41,11 @@ import {
   parseAssetMarkers,
   getAssetToSend,
   getPendingConfirmations,
-  scheduleConfirmation
+  scheduleConfirmation,
+  markAssetSent,
+  getLastSentGift,
 } from "./assets/assetEngine.js";
-import { registerAsset, invalidateAssetCache } from "./assets/assetRegistry.js";
+import { registerAsset, invalidateAssetCache, getRandomAssetByType } from "./assets/assetRegistry.js";
 import { getCatalog, invalidateCatalogCache } from "./payment/ppvStore.js";
 
 import {
@@ -280,6 +282,21 @@ function detectCosplayQuestion(text) {
 
 function detectHobbyQuestion(text) {
   return /(hobby|hobbies|interest|interests|what do you do|free time|like to do)/i.test(text);
+}
+
+// Detect khi user nói đã gửi tiền/tip/donate (chưa confirm)
+function detectUserSentPayment(text) {
+  return /(i sent|i('ve)? sent|just sent|already sent|i paid|i('ve)? paid|just paid|i transferred|i tipped|i donated|sent (you|u|through|via)|paid (you|u|through|via)|through (paypal|ko-?fi)|via (paypal|ko-?fi))/i.test(text);
+}
+
+// Detect khi user confirm "yes" sau khi bot hỏi "did u send it?"
+function detectUserConfirmedPayment(text) {
+  return /^(yes|yep|yeah|yup|yea|i did|i have|done|sent|confirmed|of course|sure|absolutely|correct|right|true|uh huh|mhm|👍|✅)[\s!.]*$/i.test(text.trim());
+}
+
+// Detect khi user từ chối / chưa gửi tiền
+function detectPaymentRejected(text) {
+  return /(not yet|i don'?t|i haven'?t|i can'?t|no i|nope|not enough|maybe later|i didn'?t|haven'?t sent|didn'?t send|no money|broke)/i.test(text);
 }
 
 function detectFlirtyExcessive(text) {
@@ -970,7 +987,7 @@ app.post("/webhook", async (req, res) => {
       const DEFAULTS = {
         daily_life:   { reusable_per_user: false, auto_delete: true,  allowed_states: ['casual','supporter'], requires_support: false, send_delay_required: false },
         confirmation: { reusable_per_user: false, auto_delete: false, allowed_states: ['casual','supporter'], requires_support: true,  send_delay_required: true  },
-        gift:         { reusable_per_user: false, auto_delete: false, allowed_states: ['casual','supporter'], requires_support: true,  send_delay_required: false },
+        gift:         { reusable_per_user: false, auto_delete: false, allowed_states: ['casual','supporter'], requires_support: false, send_delay_required: false },
         tease_selfie: { reusable_per_user: false, auto_delete: true,  allowed_states: ['supporter'],          requires_support: false, send_delay_required: false, ttl: 25 },
         exclusive_selfie: { reusable_per_user: false, auto_delete: true, allowed_states: ['supporter'],       requires_support: true,  send_delay_required: false, ttl: 25 },
         video:        { reusable_per_user: false, auto_delete: true,  allowed_states: ['casual','supporter'], requires_support: false, send_delay_required: false },
@@ -1213,8 +1230,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // ── Ảnh trong media group nhưng không có caption (ảnh 2, 3, 4...) ──
-    // Kiểm tra xem media_group_id có đang được buffer không, nếu có thì thêm vào
+    // ── Ảnh 2, 3, 4... trong media group (không có caption) ──
     if (post.media_group_id && !caption) {
       if (global._ppvPhotoBuffer) {
         const matchingKey = Object.keys(global._ppvPhotoBuffer).find(k => k.endsWith(`_${post.media_group_id}`));
@@ -1223,7 +1239,6 @@ app.post("/webhook", async (req, res) => {
             : post.video ? post.video.file_id : null;
           if (photoFileId) {
             global._ppvPhotoBuffer[matchingKey].fileIds.push(photoFileId);
-            // Reset debounce timer
             clearTimeout(global._ppvPhotoBuffer[matchingKey].timer);
             const buf = global._ppvPhotoBuffer[matchingKey];
             const supabase = (await import('@supabase/supabase-js')).createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
@@ -1524,6 +1539,83 @@ app.post("/webhook", async (req, res) => {
   applyIntent(user, intentData);
   const modelChoice = decideModel(user, intentData);
 
+  /* ========= HANDLE MANUAL PAYMENT (tip/donate/gift) ========= */
+
+  // Bước 1: User nói đã gửi tiền → bot hỏi xác nhận
+  if (detectUserSentPayment(text) && !user.pending_payment_confirmation) {
+    user.pending_payment_confirmation = true;
+    console.log(`💸 User ${chatId} claims payment sent — asking confirmation`);
+
+    await sendBurstReplies(user, chatId, "wait did you really send it?? 🥺", replyId);
+    saveMessage(chatId, { role: "bot", content: "wait did you really send it?? 🥺", stage: user.stages?.current || 1 }).catch(() => {});
+    return res.sendStatus(200);
+  }
+
+  // Bước 2a: User confirm "yes" → schedule confirmation match đúng gift đã gửi
+  if (user.pending_payment_confirmation && detectUserConfirmedPayment(text)) {
+    user.pending_payment_confirmation = false;
+    console.log(`✅ Payment confirmed by user ${chatId}`);
+
+    // Track sale success
+    onSaleSuccess(user.state);
+    saveFanProfile(chatId, {
+      total_sale_success: user.state.successfulSales,
+      relationship_state: "supporter",
+    }).catch(() => {});
+    user.state.relationship_state = "supporter";
+
+    (async () => {
+      // Random ~40% gửi exclusive selfie cảm ơn trước
+      if (Math.random() < 0.4) {
+        const exclusiveAsset = await getRandomAssetByType("exclusive_selfie");
+        if (exclusiveAsset) {
+          await sleep(1500);
+          await sendUploadPhoto(chatId);
+          await sleep(800);
+          await sendAsset(chatId, exclusiveAsset);
+          markAssetSent(chatId, exclusiveAsset.asset_id, exclusiveAsset);
+          console.log(`🎁 Sent exclusive selfie to ${chatId}`);
+        }
+      }
+
+      // Schedule confirmation match với gift bot đã gửi (dùng pending_gift_id)
+      if (user.pending_gift_id && user.pending_gift_asset) {
+        const confirmation = await scheduleConfirmation(chatId, user.pending_gift_id, user.pending_gift_asset);
+        if (confirmation) {
+          console.log(`📅 Scheduled confirmation ${confirmation.confirmationAssetId} for gift ${user.pending_gift_id} (delay: ${confirmation.delayMs / 60000} mins)`);
+        }
+        // Clear sau khi schedule
+        user.pending_gift_id = null;
+        user.pending_gift_asset = null;
+      } else {
+        console.log(`⚠️ No pending gift found for ${chatId} — cannot schedule confirmation`);
+      }
+
+      // Bot reply cảm ơn bằng text
+      await sleep(1000);
+      const thankYouReply = await callGrok(
+        buildPreciseGrokPrompt(user, "thank_you_support", null),
+        await buildContextPrompt(user, "thank_you_support", getTimeContext()),
+        text
+      );
+      await sendBurstReplies(user, chatId, thankYouReply, null);
+      saveMessage(chatId, { role: "bot", content: thankYouReply, stage: user.stages?.current || 1 }).catch(() => {});
+      user.recentMessages.push(`Aurelia: ${thankYouReply}`);
+      if (user.recentMessages.length > 20) user.recentMessages.shift();
+    })();
+
+    return res.sendStatus(200);
+  }
+
+  // Bước 2b: User từ chối → clear pending, không gửi gì
+  if (user.pending_payment_confirmation && detectPaymentRejected(text)) {
+    user.pending_payment_confirmation = false;
+    user.pending_gift_id = null;
+    user.pending_gift_asset = null;
+    console.log(`❌ Payment rejected by user ${chatId} — confirmation cancelled`);
+    // Để flow chạy tiếp bình thường, bot sẽ reply tự nhiên qua AI
+  }
+
   /* ========= HANDLE SALE RESPONSES ========= */
   if (intentData.saleResponse === "yes") {
     user.sale_clarification_pending = false;
@@ -1635,15 +1727,24 @@ app.post("/webhook", async (req, res) => {
       if (assetData) {
         const { asset, shouldScheduleConfirmation, shouldSendImage } = assetData;
         if (shouldSendImage) {
+          // Gửi ảnh bình thường
           await sendUploadPhoto(chatId);
           await sleep(800);
           const sendResult = await sendAsset(chatId, asset);
-          if (sendResult?.ok) console.log(`✅ Sent asset ${asset.assetId}`);
-          else console.error(`❌ Failed asset: ${asset.assetId}`);
+          if (sendResult?.ok) {
+            console.log(`✅ Sent asset ${asset.assetId}`);
+            // Auto-delete được xử lý bên trong telegramAssets.js (sendPhoto/sendVideo)
+          } else console.error(`❌ Failed asset: ${asset.assetId}`);
+        } else {
+          // Text-only gift (food/drink) — không gửi ảnh, chỉ log
+          console.log(`💬 Text-only gift: ${asset.assetId} — no image sent`);
         }
-        if (shouldScheduleConfirmation && user.state.totalSaleSuccess > 0) {
-          const confirmation = scheduleConfirmation(chatId, asset.assetId, asset);
-          if (confirmation) console.log(`📅 Scheduled confirmation ${confirmation.confirmationAssetId}`);
+        // Nếu là gift → lưu pending_gift_id, chờ user confirm payment mới schedule confirmation
+        // (không schedule ngay như trước)
+        if (shouldScheduleConfirmation) {
+          user.pending_gift_id = asset.assetId;
+          user.pending_gift_asset = asset;
+          console.log(`📦 Gift sent: ${asset.assetId} — waiting for user payment confirmation`);
         }
       }
     }
@@ -1763,6 +1864,7 @@ async function checkAndSendPendingConfirmations() {
         const result = await sendAsset(chatId, confirmation.asset);
         if (result?.ok) {
           console.log(`✅ Sent confirmation to ${chatId}`);
+          // Auto-delete được xử lý bên trong telegramAssets.js
           await sendBurstReplies(users[chatId], chatId, "Look what I got! 💕 Thank you so much~");
     // ✅ Sync sale success to Supabase
     const u = users[chatId];
