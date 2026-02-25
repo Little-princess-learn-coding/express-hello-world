@@ -30,12 +30,21 @@ function initUserAssets(chatId) {
 /**
  * Check if user can receive this asset
  */
-function canReceiveAsset(chatId, assetId, assetData) {
+function canReceiveAsset(chatId, assetId, assetData, userState = null) {
   const history = initUserAssets(chatId);
 
   // Memes are always reusable
   if (assetData.reusable === 'unlimited') {
     return true;
+  }
+
+  // Check requires_support — asset chỉ gửi được nếu user đã từng mua
+  if (assetData.requires_support === true) {
+    const hasPurchased = userState && (userState.successfulSales > 0);
+    if (!hasPurchased) {
+      console.log(`🔒 Asset ${assetId} requires support — user has not purchased yet`);
+      return false;
+    }
   }
 
   // Check if already received (for non-reusable assets)
@@ -144,12 +153,13 @@ function getMeme(chatId, emotion, intensity = 'medium', tone = 'cute') {
 /**
  * Mark asset as sent to user
  */
-function markAssetSent(chatId, assetId) {
+function markAssetSent(chatId, assetId, assetData = null) {
   const history = initUserAssets(chatId);
   history.received.push(assetId);
   history.last_asset_sent = {
     assetId,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    ...(assetData || {})  // lưu full asset object để getLastSentGift có thể check type
   };
 }
 
@@ -210,6 +220,34 @@ async function scheduleConfirmation(chatId, giftAssetId, giftAsset) {
     delayMs,
     asset: confirmationAsset
   };
+}
+
+/**
+ * Get the last gift asset sent to user — dùng để match confirmation
+ */
+function getLastSentGift(chatId) {
+  const history = initUserAssets(chatId);
+  // Tìm ngược từ cuối danh sách received, lấy asset đầu tiên có type 'gift'
+  for (let i = history.received.length - 1; i >= 0; i--) {
+    const assetId = history.received[i];
+    // Tìm trong registry (cả meme registry lẫn Supabase cache đều ko có gift, nhưng
+    // last_asset_sent lưu full object nên dùng cái đó)
+    if (
+      history.last_asset_sent &&
+      history.last_asset_sent.assetId === assetId &&
+      (history.last_asset_sent.type === 'gift' || history.last_asset_sent.type === 'gift_image')
+    ) {
+      return history.last_asset_sent;
+    }
+  }
+  // Fallback: trả về last_asset_sent nếu là gift
+  if (
+    history.last_asset_sent &&
+    (history.last_asset_sent.type === 'gift' || history.last_asset_sent.type === 'gift_image')
+  ) {
+    return history.last_asset_sent;
+  }
+  return null;
 }
 
 /**
@@ -341,7 +379,7 @@ function getAssetToSend(markers, strategyId, chatId) {
   }
   
   if (asset) {
-    markAssetSent(chatId, asset.assetId);
+    markAssetSent(chatId, asset.assetId, asset);  // lưu full object
     
     // Check if this gift has a linked confirmation
     // Schema mới (Supabase): confirmation có linked_gift_id → dùng asset.type === 'gift'
@@ -375,5 +413,6 @@ module.exports = {
   buildAssetInstructions,
   parseAssetMarkers,
   getAssetToSend,
-  canReceiveAsset
+  canReceiveAsset,
+  getLastSentGift,
 };
