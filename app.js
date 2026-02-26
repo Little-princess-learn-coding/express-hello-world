@@ -774,7 +774,7 @@ function flushMessageBatch(chatId) {
   messageBatchBuffer.delete(chatId);
 
   const messages = batch.messages;
-  const lastMessageId = messages[messages.length - 1].messageId;
+  const firstMessageId = messages[0].messageId; // quote the FIRST message, not the last
 
   let mergedText;
   if (messages.length === 1) {
@@ -783,9 +783,9 @@ function flushMessageBatch(chatId) {
     const combined = messages.map(m => m.text).join("\n");
     mergedText = `[CONTEXT: user sent ${messages.length} quick messages — understand the full intent, reply naturally to the overall meaning]\n${combined}`;
   }
-  // Store lastMessageId so processUserMessage can use it for quote-reply
+  // Quote-reply to the first message in the batch (the one that started the conversation turn)
   const user = users[chatId];
-  if (user) user.lastIncomingMessageId = lastMessageId;
+  if (user) user.lastIncomingMessageId = firstMessageId;
 
   console.log(`📦 Flushing batch for ${chatId}: ${messages.length} msg(s) merged`);
 
@@ -1571,13 +1571,34 @@ async function processUserMessage(chatId, text, user) {
   applyIntent(user, intentData);
   const modelChoice = decideModel(user, intentData);
 
+  // Detect "how about u / and u / what about u" — inject explicit hint so AI understands
+  let textForAI = text;
+  const isReciprocalQ = /\b(how about u|how about you|what about u|what about you|and u\?|and you\?|ur turn|your turn)\b/i.test(text)
+    || /^(u\?|you\?|and u\?|and you\?|ur\?)$/i.test(text.trim())
+    || /^(what|how) about (u|you|ur)\??$/i.test(text.trim());
+
+  if (isReciprocalQ && user.recentMessages.length >= 2) {
+    // Find what bot last asked
+    const lastBotMsg = [...user.recentMessages].reverse().find(m => m.startsWith("Aurelia:"));
+    const lastUserMsg = [...user.recentMessages].reverse().find(m => m.startsWith("User:") && !/(how about|and u|what about)/i.test(m));
+    if (lastBotMsg) {
+      const botQ = lastBotMsg.replace(/^Aurelia:\s*/, "").trim();
+      const userAnswer = lastUserMsg ? lastUserMsg.replace(/^User:\s*/, "").trim() : null;
+      const hint = userAnswer
+        ? `[CONTEXT: User answered "${userAnswer}" to your question "${botQ}". Now they're asking you the same question back. Answer about YOURSELF — what YOU do for that topic.]`
+        : `[CONTEXT: User is asking you the same question you just asked them: "${botQ}". Answer about YOURSELF.]`;
+      textForAI = `${hint}\n${text}`;
+      console.log(`🔄 Reciprocal question detected — injecting context for ${chatId}`);
+    }
+  }
+
   userBotReplying.add(chatId);
   let replyText;
   try {
     if (modelChoice === "openai") {
-      replyText = await callOpenAI(buildPreciseOpenAIPrompt(user, null), text);
+      replyText = await callOpenAI(buildPreciseOpenAIPrompt(user, null), textForAI);
     } else {
-      replyText = await callGrok(buildPreciseGrokPrompt(user, null, null), await buildContextPrompt(user, null, getTimeContext()), text);
+      replyText = await callGrok(buildPreciseGrokPrompt(user, null, null), await buildContextPrompt(user, null, getTimeContext()), textForAI);
     }
   } catch (err) {
     console.error("❌ Queue AI failed:", err.message);
