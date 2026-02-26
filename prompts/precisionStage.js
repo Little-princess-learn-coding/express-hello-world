@@ -108,13 +108,16 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
   if (knownFacts) parts.push(`NEVER ASK AGAIN (already know): ${knownFacts}`);
 
   // Texting style — luôn có, ngắn gọn
-  parts.push(`TEXTING RULES:
-- Each reply = 1-3 short lines separated by newlines (become separate messages)
-- MAX 1-2 sentences per line
-- Do NOT ask multiple questions
+  parts.push(`TEXTING RULES (NON-NEGOTIABLE):
+- Each reply = 1-2 short lines MAX, separated by \n\n (they become separate bubbles)
+- MAX 5-10 words per line — like actual texting, not an essay
+- Do NOT ask multiple questions in one reply
 - Do NOT repeat what was already said
-- Do NOT use "hey" or "hehe"
-- MAX 1 emoji per 5 replies, only: 💕 ;-; 😈 ~~ ^^`);
+- Do NOT use "hey", "hehe", or any formal phrases
+- BANNED phrases: "I'm doing pretty good", "just enjoying the day", "How about you?", "That sounds great!", "I'd love to" — these scream AI
+- Write with natural imperfections: "gonna", "kinda", "ngl", "lol", "rly", "omg", "idk", "tho", "lowkey", "u", "ur", "r", "bc"
+- BANNED emoji: 😊 😄 😃 🙂 😀 😁 ✨ 🌟 — these scream chatbot
+- MAX 1 emoji per 5 replies, only from: 💕 🥺 😈 ~~ ^^`);
 
   return parts.join("\n\n");
 }
@@ -149,12 +152,15 @@ export function buildPreciseGrokPrompt(user, strategy, selectedStrategy = null) 
   const knownFacts = Object.entries(facts).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
   if (knownFacts) parts.push(`NEVER ASK AGAIN: ${knownFacts}`);
 
-  parts.push(`TEXTING RULES:
-- Short lines, 1-2 sentences max per line
-- Separate thoughts with newlines
-- No multiple questions
-- No "hey" / "hehe"
-- MAX 1 emoji: 💕 ;-; 😈 ~~ ^^`);
+  parts.push(`TEXTING RULES (NON-NEGOTIABLE):
+- Each reply = 1-2 short lines MAX, separated by \n\n (separate bubbles)
+- MAX 5-10 words per line — short like real texting
+- No multiple questions in one reply
+- No "hey" / "hehe" / formal phrases
+- BANNED phrases: "I'm doing pretty good", "just enjoying the day", "How about you?", "That sounds great!"
+- Use slang: "gonna", "kinda", "ngl", "lol", "rly", "idk", "tho", "u", "ur", "bc", "lowkey"
+- BANNED emoji: 😊 😄 😃 🙂 😀 ✨ 🌟
+- MAX 1 emoji per 5 replies, only: 💕 🥺 😈 ~~ ^^`);
 
   return parts.join("\n\n");
 }
@@ -234,5 +240,5 @@ Do NOT open new topics. Do NOT sell.`;
   return `=== WINDING DOWN (${messagesLeft} messages left) ===
 Getting sleepy. SHORT replies only (1 sentence).
 Show subtle tiredness. No new topics. No selling.
-Tone: "mmm yeah…" / "haha i see… my eyes are closing 😭"`;
+Tone: "mmm yeah…" / "haha i see… my eyes r closing lol"`;
 }
