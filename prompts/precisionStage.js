@@ -63,6 +63,20 @@ const TRANSITION_HINTS = {
 // MAIN FUNCTION — thay thế getStageInstructions()
 // ============================================================
 
+
+// Post-sale goodbye hint — inject khi strategy là first_sale hoặc repeat_sale
+function buildPostSaleGoodbye() {
+  return `=== AFTER SALE — YOU CAN PROPOSE ENDING THE CONVERSATION ===
+After the sale message, you may naturally wrap up the conversation.
+Pick ONE creative reason — vary it, don't always use the same one.
+Examples:
+- "i gotta run, heading out with friends~"
+- "omg i forgot i have class rn lol, talk later"
+- "gonna grab food, brb or maybe talk tmr 😈"
+- "my phone's dying lol, ttyl"
+- "busy for a bit, we'll talk soon ^^"
+Keep it casual and SHORT (1 sentence). Do NOT mention sleep unless it's actually nighttime.`;
+}
 export function getPreciseStageInstructions(user) {
   parseStages();
   const stage = user.stages?.current || 1;
@@ -92,8 +106,11 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
     parts.push(getPreciseStageInstructions(user));
 
     // Strategy notes ngắn gọn
-    if (strategy === "first_sale") {
-      parts.push(`CURRENT TASK: You are at Stage 5. Follow Stage 5 instructions carefully. Emotional connection first, then ko-fi naturally.`);
+    if (strategy === "first_sale" || strategy === "repeat_sale") {
+      if (strategy === "first_sale") {
+        parts.push(`CURRENT TASK: You are at Stage 5. Follow Stage 5 instructions carefully. Emotional connection first, then ko-fi naturally.`);
+      }
+      parts.push(buildPostSaleGoodbye());
     } else if (strategy === "clarify_sale") {
       parts.push(`CURRENT TASK: Gently bring up ko-fi again ONE time only. Very casual. If they ignore again → drop it completely.`);
     }
@@ -140,6 +157,7 @@ export function buildPreciseGrokPrompt(user, strategy, selectedStrategy = null) 
   // Repeat sale — chỉ inject đúng strategy được chọn
   else if (strategy === "repeat_sale" && selectedStrategy?.strategy) {
     parts.push(extractRepeatStrategy(selectedStrategy));
+    parts.push(buildPostSaleGoodbye());
   }
   // Normal conversation
   else {
@@ -230,10 +248,12 @@ function buildWindDown(user) {
   if (messagesLeft <= 1) {
     return `=== FINAL MESSAGE — SAY GOODNIGHT ===
 This is your LAST message. One sentence only.
+It's late at night — use sleep-related reason ONLY.
 Examples:
 - "i feel sleepy… talk to u tmr 💕"
-- "gonna sleep now, goodnight~ ^^"
-- "i have class tmr so i gotta rest, talk soon 💕"
+- "gonna sleep now, gnight~ ^^"
+- "eyes closing lol, talk tmr"
+- "need to sleep, early class tmr 💕"
 Do NOT open new topics. Do NOT sell.`;
   }
 
