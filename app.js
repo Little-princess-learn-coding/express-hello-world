@@ -977,20 +977,33 @@ async function sendTyping(chatId) {
 }
 
 function splitIntoBursts(text) {
-  return text.split(/\n{2,}|(?<=[.!?])\s+/).map(t => t.trim()).filter(Boolean);
+  // Tách theo: dòng mới (
+), hoặc dấu ~ cuối câu, hoặc double newline
+  const parts = text
+    .split(/
++/)                          // tách theo newline
+    .map(t => t.trim())
+    .filter(Boolean);
+
+  // Nếu chỉ có 1 phần (AI gộp hết vào 1 dòng), thử tách theo dấu câu
+  if (parts.length === 1) {
+    return parts[0]
+      .split(/(?<=[.!?~])s+/)
+      .map(t => t.trim())
+      .filter(Boolean);
+  }
+
+  return parts;
 }
 
 // ✅ UPDATED: Thêm replyToMessageId parameter
 async function sendBurstReplies(user, chatId, text, replyToMessageId = null) {
   const parts = splitIntoBursts(text);
-  const maxMessages = Math.floor(Math.random() * 3) + 1;
-  let limitedParts;
-  if (parts.length <= maxMessages) {
-    limitedParts = parts;
-  } else {
-    limitedParts = parts.slice(0, maxMessages - 1);
-    limitedParts.push(parts.slice(maxMessages - 1).join(" "));
-  }
+  // Gửi tất cả parts — không giới hạn số bubble
+  // Nhưng cap ở 4 để tránh spam quá nhiều
+  const limitedParts = parts.length <= 4
+    ? parts
+    : [...parts.slice(0, 3), parts.slice(3).join(' ')];
 
   userBotSending.add(chatId);
   try {
