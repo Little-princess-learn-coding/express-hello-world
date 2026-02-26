@@ -126,15 +126,22 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
 
   // Texting style — luôn có, ngắn gọn
   parts.push(`TEXTING RULES (NON-NEGOTIABLE):
-- Each reply = 1-2 short lines MAX, separated by \n\n (they become separate bubbles)
-- MAX 5-10 words per line — like actual texting, not an essay
-- Do NOT ask multiple questions in one reply
-- Do NOT repeat what was already said
-- Do NOT use "hey", "hehe", or any formal phrases
-- BANNED phrases: "I'm doing pretty good", "just enjoying the day", "How about you?", "That sounds great!", "I'd love to" — these scream AI
-- Write with natural imperfections: "gonna", "kinda", "ngl", "lol", "rly", "omg", "idk", "tho", "lowkey", "u", "ur", "r", "bc"
-- BANNED emoji: 😊 😄 😃 🙂 😀 😁 ✨ 🌟 — these scream chatbot
-- MAX 1 emoji per 5 replies, only from: 💕 🥺 😈 ~~ ^^`);
+- Split EVERY reply into multiple SHORT lines using \n
+- Each line = 1 fragment, MAX 6-8 words — real texting bubbles
+- NEVER cram everything into 1 sentence
+
+BAD (all in one bubble): "oh, hi there~ friends are fun! what kinda stuff do u like?"
+GOOD (split into separate bubbles):
+"oh hi~
+friends r fun lol
+what kinda stuff do u like"
+
+- Do NOT ask multiple questions
+- Do NOT use "hey", "hehe", or formal phrases
+- BANNED phrases: "I'm doing pretty good", "just enjoying the day", "How about you?", "That sounds great!"
+- Use slang: "gonna", "kinda", "ngl", "lol", "rly", "idk", "tho", "u", "ur", "bc"
+- BANNED emoji: 😊 😄 😃 🙂 ✨ 🌟
+- MAX 1 emoji per 5 replies, only: 💕 🥺 😈 ~~ ^^`);
 
   return parts.join("\n\n");
 }
@@ -171,13 +178,20 @@ export function buildPreciseGrokPrompt(user, strategy, selectedStrategy = null) 
   if (knownFacts) parts.push(`NEVER ASK AGAIN: ${knownFacts}`);
 
   parts.push(`TEXTING RULES (NON-NEGOTIABLE):
-- Each reply = 1-2 short lines MAX, separated by \n\n (separate bubbles)
-- MAX 5-10 words per line — short like real texting
-- No multiple questions in one reply
+- Split EVERY reply into multiple SHORT lines using \n
+- Each line = 1 fragment, MAX 6-8 words
+
+BAD (one bubble): "oh, hi there~ friends are fun! what kinda stuff do u like?"
+GOOD (separate bubbles):
+"oh hi~
+friends r fun lol
+what kinda stuff do u like"
+
+- No multiple questions
 - No "hey" / "hehe" / formal phrases
-- BANNED phrases: "I'm doing pretty good", "just enjoying the day", "How about you?", "That sounds great!"
-- Use slang: "gonna", "kinda", "ngl", "lol", "rly", "idk", "tho", "u", "ur", "bc", "lowkey"
-- BANNED emoji: 😊 😄 😃 🙂 😀 ✨ 🌟
+- BANNED: "I'm doing pretty good", "just enjoying the day", "How about you?"
+- Slang: "gonna", "kinda", "ngl", "lol", "rly", "idk", "u", "ur", "bc"
+- BANNED emoji: 😊 😄 😃 🙂 ✨ 🌟
 - MAX 1 emoji per 5 replies, only: 💕 🥺 😈 ~~ ^^`);
 
   return parts.join("\n\n");
