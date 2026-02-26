@@ -977,22 +977,10 @@ async function sendTyping(chatId) {
 }
 
 function splitIntoBursts(text) {
-  // Tách theo: dòng mới (
-), hoặc dấu ~ cuối câu, hoặc double newline
-  const parts = text
-    .split(/
-+/)                          // tách theo newline
-    .map(t => t.trim())
-    .filter(Boolean);
-
-  // Nếu chỉ có 1 phần (AI gộp hết vào 1 dòng), thử tách theo dấu câu
+  const parts = text.split(/\n+/).map(t => t.trim()).filter(Boolean);
   if (parts.length === 1) {
-    return parts[0]
-      .split(/(?<=[.!?~])\s+/)
-      .map(t => t.trim())
-      .filter(Boolean);
+    return parts[0].split(/(?<=[.!?~])\s+/).map(t => t.trim()).filter(Boolean);
   }
-
   return parts;
 }
 
@@ -1092,7 +1080,7 @@ app.post("/webhook", async (req, res) => {
       if (!assetId || !assetType) {
         await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Format sai!\n\nDùng:\n/register asset_id asset_type\nkey:value\nkey:value' }),
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Wrong format!\n\nUsage:\n/register asset_id asset_type\nkey:value\nkey:value' }),
         });
         return res.sendStatus(200);
       }
@@ -1171,7 +1159,7 @@ app.post("/webhook", async (req, res) => {
       if (!fileId) {
         await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Không tìm thấy file. Hãy gửi ảnh/video kèm caption /register' }),
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ File not found. Please send a photo/video with caption /register' }),
         });
         return res.sendStatus(200);
       }
@@ -1233,7 +1221,7 @@ app.post("/webhook", async (req, res) => {
       if (!previewFileId) {
         await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Cần gửi kèm ảnh preview!' }),
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Please attach a preview photo!' }),
         });
         return res.sendStatus(200);
       }
@@ -1254,8 +1242,8 @@ app.post("/webhook", async (req, res) => {
       invalidateCatalogCache();
 
       const confirmText = error
-        ? `❌ Lỗi: ${error.message}`
-        : `✅ PPV Product created!\n\n📦 ${productId}\n💰 $${kv.price}\n📝 ${kv.name}\n🖼 Preview: set\n\nGiờ up từng ảnh album với caption:\n/ppv_photo ${productId}`;
+        ? `❌ Error: ${error.message}`
+        : `✅ PPV Product created!\n\n📦 ${productId}\n💰 $${kv.price}\n📝 ${kv.name}\n🖼 Preview: set\n\nNow upload album photos with caption:\n/ppv_photo ${productId}`;
 
       await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1284,7 +1272,7 @@ app.post("/webhook", async (req, res) => {
       if (!photoFileId) {
         await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Cần gửi kèm ảnh hoặc video!' }),
+          body: JSON.stringify({ chat_id: post.chat.id, text: '❌ Please attach a photo or video!' }),
         });
         return res.sendStatus(200);
       }
@@ -1296,7 +1284,7 @@ app.post("/webhook", async (req, res) => {
       if (!existing) {
         await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendMessage`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: post.chat.id, text: `❌ Product "${productId}" chưa tồn tại. Tạo preview trước bằng /ppv_preview` }),
+          body: JSON.stringify({ chat_id: post.chat.id, text: `❌ Product "${productId}" does not exist. Create it first with /ppv_preview` }),
         });
         return res.sendStatus(200);
       }
@@ -1851,7 +1839,7 @@ app.get("/dashboard", (req, res) => {
     let html = readFileSync(path.join(__dirname, "dashboard.html"), "utf8");
     html = html
       .replace("const SUPABASE_URL = window.SUPABASE_URL || '';", `const SUPABASE_URL = '${supabaseUrl}';`)
-      .replace("const SUPABASE_KEY = window.SUPABASE_KEY || ''; // dùng publishable key (anon)", `const SUPABASE_KEY = '${supabaseKey}';`);
+      .replace("const SUPABASE_KEY = window.SUPABASE_KEY || ''; // use publishable key (anon)", `const SUPABASE_KEY = '${supabaseKey}';`);
     res.send(html);
   } catch(e) {
     res.status(500).send('Dashboard error: ' + e.message);
