@@ -988,7 +988,7 @@ function splitIntoBursts(text) {
   // Nếu chỉ có 1 phần (AI gộp hết vào 1 dòng), thử tách theo dấu câu
   if (parts.length === 1) {
     return parts[0]
-      .split(/(?<=[.!?~])s+/)
+      .split(/(?<=[.!?~])\s+/)
       .map(t => t.trim())
       .filter(Boolean);
   }
