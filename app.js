@@ -160,9 +160,9 @@ function calculateMoodTrend(moodHistory) {
 
 function buildMoodGuide(dominantMood, moodTrend) {
   const guides = {
-    positive: "=== MOOD GUIDE ===\nFan is in a GOOD mood 😊 — match their energy, be playful and warm.",
+    positive: "=== MOOD GUIDE ===\nFan is in a GOOD mood — match their energy, be playful and warm.",
     neutral: "=== MOOD GUIDE ===\nFan seems NEUTRAL — keep it natural, don't force excitement.",
-    negative: "=== MOOD GUIDE ===\nFan seems DOWN 🥺 — be gentle, show care. Skip sales. Ask what's wrong briefly.",
+    negative: "=== MOOD GUIDE ===\nFan seems DOWN — be gentle, show care. Skip sales. Ask what's wrong briefly.",
   };
   let guide = guides[dominantMood] || guides.neutral;
   if (moodTrend === "improving") guide += "\nMood is getting better — you can be warmer and more playful.";
@@ -251,7 +251,7 @@ function shouldReplyToMessage(user, text) {
   if (/(aurelia|you|ur|your)/i.test(text)) return true;
   if (user.message_count <= 2) return true;
   if (text.trim().split(" ").length <= 2) return false;
-  return Math.random() < 0.4;
+  return Math.random() < 0.25;
 }
 
 /* ================== STAGE SYSTEM ================== */
@@ -460,7 +460,7 @@ async function callOpenAI(systemPrompt, userMessage) {
       model: "gpt-4o-mini",
       messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
       temperature: 0.7,
-      max_tokens: 500,
+      max_tokens: 80,
     }),
   });
   const data = await response.json();
@@ -480,7 +480,7 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
         { role: "user", content: userMessage },
       ],
       temperature: 0.95,
-      max_tokens: 500,
+      max_tokens: 80,
     }),
   });
   const data = await response.json();
@@ -718,7 +718,18 @@ ${moodGuide}
 ${windDownInstructions}
 
 USER STATE: ${user.state.relationship_state}
-Keep responses natural and flirty.`;
+
+=== TEXTING STYLE (STRICT) ===
+- Write like a real girl texting on phone, NOT an essay
+- Each message = MAX 1 short sentence (8-12 words)
+- To say 2 things → 2 SEPARATE lines (become separate messages)
+- BAD: "hi there! I'm doing great, thanks! How about you?"
+- GOOD: "hi!" / "doing great~" / "how about u?"
+- Do NOT ask multiple questions in one reply
+- Do NOT repeat info already said
+- Never mention Da Nang, your job, height, weight unless directly asked
+- Use teencode naturally: k, r, u, ur, ngl, lol, omg, rly, smth, idk, bc
+- Do NOT use "hey" or "hehe"`;
 }
 
 /* ================== USER STATE ================== */
@@ -727,6 +738,54 @@ const processingMessages = new Set();
 const userBotReplying = new Set();
 const userBotSending = new Set();
 const userMessageQueue = new Map();
+/* ================== MESSAGE BATCH BUFFER ================== */
+// Gom tin nhắn liên tiếp của user trong 2.5s rồi xử lý 1 lần duy nhất
+const messageBatchBuffer = new Map(); // chatId → { messages: [{text, messageId}], timer }
+
+function flushMessageBatch(chatId) {
+  const batch = messageBatchBuffer.get(chatId);
+  if (!batch || batch.messages.length === 0) return;
+  messageBatchBuffer.delete(chatId);
+
+  const messages = batch.messages;
+  const lastMessageId = messages[messages.length - 1].messageId;
+
+  let mergedText;
+  if (messages.length === 1) {
+    mergedText = messages[0].text;
+  } else {
+    // Merge nhiều tin nhắn thành 1 — AI sẽ rep tổng hợp, không rep từng cái
+    const combined = messages.map(m => m.text).join("\n");
+    mergedText = `[user sent ${messages.length} messages in a row — reply to the overall meaning, not each line]\n${combined}`;
+  }
+
+  console.log(`📦 Flushing batch for ${chatId}: ${messages.length} msg(s) merged`);
+
+  const user = users[chatId];
+  if (!user) return;
+
+  // Inject vào processing queue bình thường
+  if (userBotReplying.has(chatId) || userBotSending.has(chatId)) {
+    enqueueMessage(chatId, mergedText);
+  } else {
+    // Trigger processUserMessage trực tiếp
+    userMessageQueue.set(chatId, [mergedText]);
+    processNextInQueue(chatId);
+  }
+}
+
+function bufferOrFlushMessage(chatId, text, messageId) {
+  if (!messageBatchBuffer.has(chatId)) {
+    messageBatchBuffer.set(chatId, { messages: [], timer: null });
+  }
+  const batch = messageBatchBuffer.get(chatId);
+  clearTimeout(batch.timer);
+  batch.messages.push({ text, messageId });
+  // Đợi 2.5s sau tin nhắn cuối cùng mới flush
+  batch.timer = setTimeout(() => flushMessageBatch(chatId), 4000);
+}
+
+
 
 // ✅ Khởi động PPV routes SAU KHI users được khai báo
 initPPVRoutes(app, users);
@@ -1307,9 +1366,6 @@ app.post("/webhook", async (req, res) => {
   processingMessages.add(messageKey);
   setTimeout(() => processingMessages.delete(messageKey), 30000);
 
-  if (userBotSending.has(chatId)) { enqueueMessage(chatId, text); return res.sendStatus(200); }
-  if (userBotReplying.has(chatId)) { enqueueMessage(chatId, text); return res.sendStatus(200); }
-
   // Admin check
   const adminAction = await handleAdminMessage(message);
   if (adminAction) { console.log(`👨‍💼 Admin action:`, adminAction); return res.sendStatus(200); }
@@ -1409,380 +1465,12 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(200);
   }
 
-  user.message_count++;
-  user.last_active = Date.now();
-  if (user.conversation_mode === "idle" || user.conversation_mode === "resting") user.conversation_mode = "chatting";
-
-  onUserMessage(user.state);
-  resetWeeklyCounter(user.state);
-
-  if (timeContext === "deep_night" && (user.conversation_mode === "chatting" || user.conversation_mode === "flirting") && !user.wind_down) {
-    console.log(`🌙 Activating wind-down`);
-    user.wind_down = true;
-    user.wind_down_messages_sent = 0;
-  }
-
-  initializeStageTracking(user);
-  const stageTransition = detectStageTransition(user, text);
-
-  if (stageTransition) {
-    if (stageTransition.trigger === "stage_5A" || stageTransition.trigger === "stage_5A_mild") {
-      console.log(`📸 Stage 5A triggered`);
-      userBotReplying.add(chatId);
-      const replyText = await callGrok(
-        buildPreciseGrokPrompt(user, "stage_5A", null),
-        await buildContextPrompt(user, "stage_5A", getTimeContext()),
-        text
-      );
-      user.has_seen_content = true;
-      userBotReplying.delete(chatId);
-
-      // ✅ NEW: smart reply-to
-      const replyId = shouldReplyToMessage(user, text) ? messageId : null;
-      await sendBurstReplies(user, chatId, replyText, replyId);
-
-      // ✅ NEW: Gửi album preview sau khi bot reply stage 5A
-      // Chọn album phù hợp hoặc album đầu tiên trong catalog
-      await sleep(2000);
-      const catalog = await getCatalog();
-      const catalogIds = Object.keys(catalog);
-      if (catalogIds.length > 0) {
-        const albumToOffer = catalogIds[0];
-        await sendAlbumPreview(chatId, albumToOffer);
-      }
-
-      user.recentMessages.push(`Aurelia: ${replyText}`);
-      if (user.recentMessages.length > 12) user.recentMessages.shift();
-
-      // ✅ NEW: update context after bot reply
-      updateConversationContext(user, replyText, "bot");
-
-      onSaleAttempt(user.state);
-      user.has_asked_support = true;
-      updateStage(user, 6, "Stage 5A completed");
-      return res.sendStatus(200);
-    }
-  }
-
-  if (isStranger(user.state) && detectFastLane(text) && !stageTransition) {
-    user.state.relationship_state = "casual";
-    user.state.updatedAt = Date.now();
-    console.log(`⚡ Fast lane: stranger → casual`);
-  }
-
-  // ✅ Sale success giờ được xử lý tự động qua PayPal/Crypto webhook
-  // ppvStore.js sẽ gọi onSaleSuccess() sau khi payment confirmed
-
-  /* ========= SAVE USER MESSAGE ========= */
-  user.recentMessages.push(`User: ${text}`);
-  if (user.recentMessages.length > 20) user.recentMessages.shift();
-
-  if (isStranger(user.state) && detectEmotionalSupport(text)) user.emotional_ready = true;
-
-  /* ========= CLASSIFY + EXTRACT FACTS ========= */
-  const { intent: intentData, facts: extractedFacts } = await classifyMessageAndExtractFacts(user, text, user.recentMessages);
-
-  // ✅ NEW: Refresh conversation summary every 10 messages
-  await refreshConversationSummary(user);
-
-  // Save facts to in-memory + Supabase
-  try {
-    if (extractedFacts && Object.keys(extractedFacts).length > 0) {
-      const newFacts = {};
-      for (const key in extractedFacts) {
-        if (extractedFacts[key] && !user.memoryFacts[key]) newFacts[key] = extractedFacts[key];
-      }
-      if (Object.keys(newFacts).length > 0) {
-        updateUser(user.chatId, { memoryFacts: { ...user.memoryFacts, ...newFacts } });
-        // ✅ Persist to Supabase
-        saveFanProfile(chatId, {
-          name: user.memoryFacts.name,
-          age: user.memoryFacts.age,
-          location: user.memoryFacts.location,
-          job: user.memoryFacts.job,
-          relationship_level: user.relationship_level,
-          message_count: user.message_count,
-          stage: user.stages?.current || 1,
-          relationship_state: user.state.relationship_state,
-        }).catch(e => console.log("Supabase profile save failed:", e.message));
-        console.log(`💾 Saved facts for ${chatId}:`, newFacts);
-      }
-    }
-  } catch (e) {
-    console.log("Memory save failed:", e.message);
-  }
-
-  // ✅ RAG: Extract memories từ tin nhắn fan và lưu Supabase
-  extractAndSaveMemories(chatId, text, user.recentMessages, (sys, usr) => callOpenAI(sys, usr))
-    .then(r => { user.currentKeywords = r.currentKeywords || []; })
-    .catch(() => { user.currentKeywords = []; });
-
-  // ✅ NEW: Update conversation context with user message
-  updateConversationContext(user, text, "user", intentData);
-
-  // ✅ Save fan message to Supabase
-  saveMessage(chatId, { role: "fan", content: text, stage: user.stages?.current || 1 })
-    .catch(e => console.log("saveMessage fan error:", e.message));
-
-  // ✅ Check Human Takeover — nếu admin đang takeover thì bot không reply
-  const isTakeover = await checkTakeover(chatId);
-  if (isTakeover) {
-    console.log(`🛑 Takeover active for ${chatId} — bot paused`);
-    return res.sendStatus(200);
-  }
-
-  if (intentData.intent === "flirt") user.conversation_mode = "flirting";
-  else if (intentData.intent === "normal") user.conversation_mode = "chatting";
-  if (user.wind_down || intentData.windDown) { user.conversation_mode = "resting"; user.conversationClosed = true; }
-
-  user.lastIntentData = intentData;
-  applyIntent(user, intentData);
-  const modelChoice = decideModel(user, intentData);
-
-  /* ========= HANDLE MANUAL PAYMENT (tip/donate/gift) ========= */
-
-  // Bước 1: User nói đã gửi tiền → bot hỏi xác nhận
-  if (detectUserSentPayment(text) && !user.pending_payment_confirmation) {
-    user.pending_payment_confirmation = true;
-    console.log(`💸 User ${chatId} claims payment sent — asking confirmation`);
-
-    await sendBurstReplies(user, chatId, "wait did you really send it?? 🥺", replyId);
-    saveMessage(chatId, { role: "bot", content: "wait did you really send it?? 🥺", stage: user.stages?.current || 1 }).catch(() => {});
-    return res.sendStatus(200);
-  }
-
-  // Bước 2a: User confirm "yes" → schedule confirmation match đúng gift đã gửi
-  if (user.pending_payment_confirmation && detectUserConfirmedPayment(text)) {
-    user.pending_payment_confirmation = false;
-    console.log(`✅ Payment confirmed by user ${chatId}`);
-
-    // Track sale success
-    onSaleSuccess(user.state);
-    saveFanProfile(chatId, {
-      total_sale_success: user.state.successfulSales,
-      relationship_state: "supporter",
-    }).catch(() => {});
-    user.state.relationship_state = "supporter";
-
-    (async () => {
-      // Random ~40% gửi exclusive selfie cảm ơn trước
-      if (Math.random() < 0.4) {
-        const exclusiveAsset = await getRandomAssetByType("exclusive_selfie");
-        if (exclusiveAsset) {
-          await sleep(1500);
-          await sendUploadPhoto(chatId);
-          await sleep(800);
-          await sendAsset(chatId, exclusiveAsset);
-          markAssetSent(chatId, exclusiveAsset.asset_id, exclusiveAsset);
-          console.log(`🎁 Sent exclusive selfie to ${chatId}`);
-        }
-      }
-
-      // Schedule confirmation match với gift bot đã gửi (dùng pending_gift_id)
-      if (user.pending_gift_id && user.pending_gift_asset) {
-        const confirmation = await scheduleConfirmation(chatId, user.pending_gift_id, user.pending_gift_asset);
-        if (confirmation) {
-          console.log(`📅 Scheduled confirmation ${confirmation.confirmationAssetId} for gift ${user.pending_gift_id} (delay: ${confirmation.delayMs / 60000} mins)`);
-        }
-        // Clear sau khi schedule
-        user.pending_gift_id = null;
-        user.pending_gift_asset = null;
-      } else {
-        console.log(`⚠️ No pending gift found for ${chatId} — cannot schedule confirmation`);
-      }
-
-      // Bot reply cảm ơn bằng text
-      await sleep(1000);
-      const thankYouReply = await callGrok(
-        buildPreciseGrokPrompt(user, "thank_you_support", null),
-        await buildContextPrompt(user, "thank_you_support", getTimeContext()),
-        text
-      );
-      await sendBurstReplies(user, chatId, thankYouReply, null);
-      saveMessage(chatId, { role: "bot", content: thankYouReply, stage: user.stages?.current || 1 }).catch(() => {});
-      user.recentMessages.push(`Aurelia: ${thankYouReply}`);
-      if (user.recentMessages.length > 20) user.recentMessages.shift();
-    })();
-
-    return res.sendStatus(200);
-  }
-
-  // Bước 2b: User từ chối → clear pending, không gửi gì
-  if (user.pending_payment_confirmation && detectPaymentRejected(text)) {
-    user.pending_payment_confirmation = false;
-    user.pending_gift_id = null;
-    user.pending_gift_asset = null;
-    console.log(`❌ Payment rejected by user ${chatId} — confirmation cancelled`);
-    // Để flow chạy tiếp bình thường, bot sẽ reply tự nhiên qua AI
-  }
-
-  /* ========= HANDLE SALE RESPONSES ========= */
-  if (intentData.saleResponse === "yes") {
-    user.sale_clarification_pending = false;
-  } else if (intentData.saleResponse === "no") {
-    onSaleFailure(user.state);
-    // ✅ Sync sale fail to Supabase
-    saveFanProfile(chatId, {
-      total_sale_attempts: (user.state.totalSales || 0),
-      total_sale_fail: (user.state.totalSales || 0) - (user.state.successfulSales || 0),
-    }).catch(() => {});
-    user.sale_clarification_pending = false;
-    console.log(`❌ Sale declined`);
-    if (isTimeWaster(user.state)) { user.conversationClosed = true; return res.sendStatus(200); }
-  } else if (intentData.saleResponse === "maybe") {
-    user.sale_clarification_pending = false;
-  } else if (intentData.saleResponse === "none" && user.has_asked_support) {
-    user.sale_clarification_pending = true;
-  }
-
-  /* ========= SALE DECISION ========= */
-  let strategy = null;
-  let selectedStrategy = null;
-
-  if (timeContext === "deep_night" && user.conversation_mode === "selling") user.wind_down = false;
-
-  if (user.sale_clarification_pending) {
-    strategy = "clarify_sale";
-  } else if (isStranger(user.state) && user.stages.current >= 5 && user.emotional_ready && !user.has_asked_support) {
-    const timingCheck = shouldAttemptSaleByTiming(user);
-    if (timingCheck.allow || timingCheck.force) {
-      strategy = "first_sale";
-      user.conversation_mode = "selling";
-      updateStage(user, 5, "First sale triggered");
-    }
-  } else if ((isCasual(user.state) || isSupporter(user.state)) && user.has_asked_support) {
-    if (user.wind_down) {
-      console.log(`🌙 Wind-down - blocking sale`);
-    } else {
-      selectedStrategy = selectRepeatStrategy(user, intentData, user.recentMessages);
-      console.log(`🎯 Strategy: ${selectedStrategy.strategy} (${selectedStrategy.confidence})`);
-
-      if (selectedStrategy.canBypass) {
-        strategy = "repeat_sale";
-        user.conversation_mode = "selling";
-      } else {
-        const timingCheck = shouldAttemptSaleByTiming(user);
-        if (timingCheck.allow || timingCheck.force) {
-          const contextCheck = isConversationSuitableForSale(user, intentData, user.recentMessages);
-          if ((contextCheck.suitable || timingCheck.force) && (selectedStrategy.confidence >= 0.6 || timingCheck.force)) {
-            strategy = "repeat_sale";
-            user.conversation_mode = "selling";
-          }
-        }
-      }
-    }
-  }
-
-  if (strategy === "first_sale" || strategy === "repeat_sale") {
-    onSaleAttempt(user.state);
-    user.has_asked_support = true;
-    user.state.lastSaleMessageCount = user.message_count;
-  }
-
-  /* ========= CALL AI ========= */
-  userBotReplying.add(chatId);
-  let replyText;
-  try {
-    if (modelChoice === "openai") {
-      replyText = await callOpenAI(buildPreciseOpenAIPrompt(user, strategy), text);
-    } else {
-      replyText = await callGrok(
-        buildPreciseGrokPrompt(user, strategy, selectedStrategy),
-        await buildContextPrompt(user, strategy, getTimeContext()),
-        text
-      );
-    }
-  } catch (err) {
-    console.error("❌ AI call failed:", err.message);
-    userBotReplying.delete(chatId);
-    return res.sendStatus(200);
-  }
-
-  const assetMarkers = parseAssetMarkers(replyText);
-  const cleanReplyText = assetMarkers.cleanResponse;
-  userBotReplying.delete(chatId);
-
-  // ✅ NEW: Decide whether to quote-reply
-  const replyId = shouldReplyToMessage(user, text) ? messageId : null;
-
-  (async () => {
-    // ✅ UPDATED: Pass replyId vào sendBurstReplies
-    await sendBurstReplies(user, chatId, cleanReplyText, replyId);
-    await logBotMessage(message.from.id, cleanReplyText);
-    // ✅ Save bot message to Supabase
-    saveMessage(chatId, { role: "bot", content: cleanReplyText, strategy: strategy || null, stage: user.stages?.current || 1 })
-      .catch(e => console.log("saveMessage bot error:", e.message));
-    // ✅ Save any photos delivered (from assetMarkers)
-    if (assetMarkers.deliveredFileIds?.length > 0) {
-      for (const fid of assetMarkers.deliveredFileIds) {
-        saveMessage(chatId, { role: "bot", content: "[photo]", media_type: "photo", file_id: fid, stage: user.stages?.current || 1 })
-          .catch(() => {});
-      }
-    }
-
-    // Send asset
-    if (assetMarkers.hasAsset && !(user.wind_down && user.conversation_mode !== "selling")) {
-      await sleep(1500);
-      const assetData = getAssetToSend(assetMarkers, 0, chatId);
-      if (assetData) {
-        const { asset, shouldScheduleConfirmation, shouldSendImage } = assetData;
-        if (shouldSendImage) {
-          // Gửi ảnh bình thường
-          await sendUploadPhoto(chatId);
-          await sleep(800);
-          const sendResult = await sendAsset(chatId, asset);
-          if (sendResult?.ok) {
-            console.log(`✅ Sent asset ${asset.assetId}`);
-            // Auto-delete được xử lý bên trong telegramAssets.js (sendPhoto/sendVideo)
-          } else console.error(`❌ Failed asset: ${asset.assetId}`);
-        } else {
-          // Text-only gift (food/drink) — không gửi ảnh, chỉ log
-          console.log(`💬 Text-only gift: ${asset.assetId} — no image sent`);
-        }
-        // Nếu là gift → lưu pending_gift_id, chờ user confirm payment mới schedule confirmation
-        // (không schedule ngay như trước)
-        if (shouldScheduleConfirmation) {
-          user.pending_gift_id = asset.assetId;
-          user.pending_gift_asset = asset;
-          console.log(`📦 Gift sent: ${asset.assetId} — waiting for user payment confirmation`);
-        }
-      }
-    }
-
-    if ((strategy === "first_sale" || strategy === "repeat_sale") && botAskedForSupport(cleanReplyText)) {
-      user.has_asked_support = true;
-      if (user.stages.current === 5) updateStage(user, 6, "Sale asked");
-    }
-
-    /* ========= SAVE BOT REPLY ========= */
-    user.recentMessages.push(`Aurelia: ${cleanReplyText}`);
-    if (user.recentMessages.length > 20) user.recentMessages.shift();
-
-    // ✅ NEW: Update context after bot reply
-    updateConversationContext(user, cleanReplyText, "bot");
-
-    if (user.wind_down && user.conversation_mode !== "selling") {
-      user.wind_down_messages_sent = (user.wind_down_messages_sent || 0) + 1;
-      if (user.wind_down_messages_sent >= 3) {
-        user.conversation_mode = "resting";
-        user.wind_down = false;
-        user.wind_down_messages_sent = 0;
-      }
-    }
-
-    if (!user.firstReplySent) user.firstReplySent = true;
-
-    const summary = getStateSummary(user.state);
-    console.log(`📊 User ${chatId}:`, summary);
-    console.log(`🎭 Stage: ${user.stages.current} | Mood: ${user.conversationContext?.dominantMood} | Topic: ${user.conversationContext?.currentTopic}`);
-
-    setTimeout(() => processNextInQueue(chatId), 500);
-  })();
-
-  res.sendStatus(200);
+  /* ========= BATCH BUFFER ========= */
+  // Gom tin nhắn liên tiếp, flush sau 2.5s → bot rep tổng hợp 1 lần thay vì rep từng cái
+  bufferOrFlushMessage(chatId, text, messageId);
+  return res.sendStatus(200);
 });
 
-/* ================== PROCESS USER MESSAGE (queue) ================== */
 async function processUserMessage(chatId, text, user) {
   if (userBotReplying.has(chatId) || userBotSending.has(chatId)) { enqueueMessage(chatId, text); return; }
   if (isTimeWaster(user.state) || user.conversationClosed) return;
