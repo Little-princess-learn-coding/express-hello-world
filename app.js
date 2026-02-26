@@ -142,7 +142,8 @@ function calculateDominantMood(moodHistory) {
     const weight = (i + 1) / moodHistory.length;
     counts[m.mood] = (counts[m.mood] || 0) + weight;
   });
-  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return sorted.length > 0 ? sorted[0][0] : "neutral";
 }
 
 function calculateMoodTrend(moodHistory) {
@@ -915,6 +916,15 @@ function getUser(chatId, username = null) {
         if (profile.stage) u.stages.current = profile.stage;
         if (profile.relationship_state) u.state.relationship_state = profile.relationship_state;
         console.log(`📂 Fan profile loaded: ${chatId} (${profile.relationship_state}, stage ${profile.stage})`);
+        // Restore recent chat history from DB so context survives server restarts
+        getMessages(chatId, 20).then(msgs => {
+          if (msgs && msgs.length > 0 && u.recentMessages.length === 0) {
+            u.recentMessages = msgs.map(m =>
+              m.role === 'fan' ? `User: ${m.content}` : `Aurelia: ${m.content}`
+            );
+            console.log(`📜 Restored ${msgs.length} messages for ${chatId}`);
+          }
+        }).catch(() => {});
       }
     }).catch(e => console.error("loadFanProfile error:", e));
   }
@@ -1537,8 +1547,9 @@ async function processUserMessage(chatId, text, user) {
   resetWeeklyCounter(user.state);
   initializeStageTracking(user);
 
+  if (!Array.isArray(user.recentMessages)) user.recentMessages = [];
   user.recentMessages.push(`User: ${text}`);
-  if (user.recentMessages.length > 12) user.recentMessages.shift();
+  if (user.recentMessages.length > 20) user.recentMessages.shift();
 
   const { intent: intentData, facts: extractedFacts } = await classifyMessageAndExtractFacts(user, text, user.recentMessages);
   await refreshConversationSummary(user);
