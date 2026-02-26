@@ -246,12 +246,37 @@ Write in plain English. Be concise. No bullet points.`;
 
 /* ================== REPLY-TO-MESSAGE LOGIC ================== */
 
-function shouldReplyToMessage(user, text) {
-  if (/\?$/.test(text.trim())) return true;
-  if (/(aurelia|you|ur|your)/i.test(text)) return true;
-  if (user.message_count <= 2) return true;
-  if (text.trim().split(" ").length <= 2) return false;
-  return Math.random() < 0.25;
+// shouldQuoteReply — chỉ quyết định có QUOTE tin nhắn hay không
+// Bot LUÔN reply, hàm này chỉ ảnh hưởng UI quote bubble
+function shouldQuoteReply(user, text) {
+  if (/\?$/.test(text.trim())) return true;       // có câu hỏi → quote
+  if (user.message_count <= 3) return true;         // tin đầu → quote
+  return false;                                      // còn lại → không quote, rep bình thường
+}
+
+// ================================================================
+// CONVERSATION END LOGIC
+// Case 1: User chủ động bye → bot reply ngắn → đóng
+// Case 2: Bot chủ động bye (sau sale / deep night) → user reply bất cứ gì → bot chúc ngủ ngon → đóng
+// ================================================================
+
+function detectUserGoodbye(userText) {
+  return /(\bgbye\b|\bbye\b|goodbye|see ya|see u later|talk later|talk 2 u later|talk to u later|\bgotta go\b|ttyl|\bcya\b|good night|goodnight|i have to go|i gotta go|i need to go|going now|heading out|back to work|back to class|im busy now)/i.test(userText);
+}
+
+function detectMutualGoodbye(user, botReply, userText) {
+  // Case 1: User nói bye → bot acknowledge → đóng
+  if (detectUserGoodbye(userText)) {
+    const botAcknowledges = /(bye|see ya|see u|goodnight|good night|talk later|talk soon|ttyl|take care)/i.test(botReply);
+    return botAcknowledges;
+  }
+
+  // Case 2: Bot đã chủ động propose goodbye trước → user reply bất cứ gì → bot đã gửi final message → đóng
+  if (user.bot_initiated_goodbye && user.bot_sent_final_goodbye) {
+    return true;
+  }
+
+  return false;
 }
 
 /* ================== STAGE SYSTEM ================== */
@@ -766,12 +791,27 @@ function flushMessageBatch(chatId) {
 
   // Inject vào processing queue bình thường
   if (userBotReplying.has(chatId) || userBotSending.has(chatId)) {
+    // Bot đang bận — enqueue và poll cho đến khi bot rảnh
     enqueueMessage(chatId, mergedText);
+    waitAndDrainQueue(chatId);
   } else {
-    // Trigger processUserMessage trực tiếp
+    // Bot rảnh — xử lý ngay
     userMessageQueue.set(chatId, [mergedText]);
     processNextInQueue(chatId);
   }
+}
+
+// Đợi bot rảnh rồi drain queue — dùng setInterval để tránh stack overflow
+function waitAndDrainQueue(chatId) {
+  let attempts = 0;
+  const interval = setInterval(() => {
+    attempts++;
+    if (attempts > 20) { clearInterval(interval); return; } // max 10s timeout
+    if (!userBotReplying.has(chatId) && !userBotSending.has(chatId)) {
+      clearInterval(interval);
+      processNextInQueue(chatId);
+    }
+  }, 500);
 }
 
 function bufferOrFlushMessage(chatId, text, messageId) {
@@ -842,6 +882,8 @@ function getUser(chatId, username = null) {
       conversationContext: createConversationContext(),
       firstReplySent: false,
       conversationClosed: false,
+      bot_initiated_goodbye: false,  // bot đã chủ động đề nghị kết thúc
+      bot_sent_final_goodbye: false, // bot đã gửi tin nhắn cuối (chúc ngủ ngon)
       has_seen_content: false,
       emotional_ready: false,
       has_asked_support: false,
@@ -1475,6 +1517,16 @@ async function processUserMessage(chatId, text, user) {
   if (userBotReplying.has(chatId) || userBotSending.has(chatId)) { enqueueMessage(chatId, text); return; }
   if (isTimeWaster(user.state) || user.conversationClosed) return;
 
+  // Nếu user nhắn lại sau khi bye → reset tất cả và tiếp tục
+  if (user.conversationClosed) {
+    user.conversationClosed = false;
+    user.wind_down = false;
+    user.wind_down_messages_sent = 0;
+    user.bot_initiated_goodbye = false;
+    user.bot_sent_final_goodbye = false;
+    console.log(`🔄 Conversation reopened for ${chatId}`);
+  }
+
   user.message_count++;
   user.last_active = Date.now();
   if (user.conversation_mode === "idle" || user.conversation_mode === "resting") user.conversation_mode = "chatting";
@@ -1527,15 +1579,33 @@ async function processUserMessage(chatId, text, user) {
   // Queue messages don't have original messageId, so no quote reply
   await sendBurstReplies(user, chatId, cleanReplyText, null);
   await logBotMessage(chatId, cleanReplyText);
-  // ✅ Save bot message to Supabase
   saveMessage(chatId, { role: "bot", content: cleanReplyText, stage: user.stages?.current || 1 })
     .catch(e => console.log("saveMessage bot error:", e.message));
 
   user.recentMessages.push(`Aurelia: ${cleanReplyText}`);
   if (user.recentMessages.length > 12) user.recentMessages.shift();
 
-  // ✅ NEW: Update context
   updateConversationContext(user, cleanReplyText, "bot");
+
+  // Detect bot chủ động propose goodbye (wind_down final hoặc post-sale)
+  const botProposesGoodbye = /(i have to go|i gotta go|gotta sleep|going to bed|have class|need to rest|gonna sleep|going to sleep|talk to u (tmr|tomorrow|later)|talk (tmr|tomorrow|later))/i.test(cleanReplyText);
+  if (botProposesGoodbye && !user.bot_initiated_goodbye) {
+    user.bot_initiated_goodbye = true;
+    user.bot_sent_final_goodbye = false;
+    console.log(`🌙 Bot proposed goodbye for ${chatId} — waiting for user response`);
+  }
+
+  // Nếu bot đã propose goodbye và đây là reply tiếp theo → đây là final message
+  if (user.bot_initiated_goodbye && !botProposesGoodbye && !user.bot_sent_final_goodbye) {
+    user.bot_sent_final_goodbye = true;
+  }
+
+  // Đóng hội thoại
+  if (detectMutualGoodbye(user, cleanReplyText, text)) {
+    user.conversationClosed = true;
+    user.conversation_mode = "idle";
+    console.log(`👋 Conversation closed for ${chatId}`);
+  }
 
   console.log(`✅ Queue processed for ${chatId}`);
   setTimeout(() => processNextInQueue(chatId), 500);
