@@ -500,7 +500,7 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.XAI_API_KEY}` },
     body: JSON.stringify({
-      model: "grok-2-latest",
+      model: "grok-3",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "system", content: contextPrompt },
@@ -520,7 +520,7 @@ async function classifyImage(imageUrl) {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.XAI_API_KEY}` },
     body: JSON.stringify({
-      model: "grok-2-vision-latest",
+      model: "grok-2-vision-1212",
       messages: [
         { role: "system", content: "You classify photos sent to a girlfriend-vibe chatbot. Be conservative." },
         { role: "user", content: [{ type: "text", text: "Classify into ONE: selfie, body_flex, pet, food, scenery, meme, other. Reply ONLY with category name." }, { type: "image_url", image_url: imageUrl }] }
