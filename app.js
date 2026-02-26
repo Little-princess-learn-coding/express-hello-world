@@ -779,14 +779,15 @@ function flushMessageBatch(chatId) {
   if (messages.length === 1) {
     mergedText = messages[0].text;
   } else {
-    // Merge nhiều tin nhắn thành 1 — AI sẽ rep tổng hợp, không rep từng cái
     const combined = messages.map(m => m.text).join("\n");
-    mergedText = `[user sent ${messages.length} messages in a row — reply to the overall meaning, not each line]\n${combined}`;
+    mergedText = `[CONTEXT: user sent ${messages.length} quick messages — understand the full intent, reply naturally to the overall meaning]\n${combined}`;
   }
+  // Store lastMessageId so processUserMessage can use it for quote-reply
+  const user = users[chatId];
+  if (user) user.lastIncomingMessageId = lastMessageId;
 
   console.log(`📦 Flushing batch for ${chatId}: ${messages.length} msg(s) merged`);
 
-  const user = users[chatId];
   if (!user) return;
 
   // Inject vào processing queue bình thường
@@ -1578,7 +1579,10 @@ async function processUserMessage(chatId, text, user) {
   userBotReplying.delete(chatId);
 
   // Queue messages don't have original messageId, so no quote reply
-  await sendBurstReplies(user, chatId, cleanReplyText, null);
+  // Quote-reply to the last user message (shows reply bubble like image 3)
+  const quoteId = user.lastIncomingMessageId || null;
+  await sendBurstReplies(user, chatId, cleanReplyText, quoteId);
+  user.lastIncomingMessageId = null; // reset after use
   await logBotMessage(chatId, cleanReplyText);
   saveMessage(chatId, { role: "bot", content: cleanReplyText, stage: user.stages?.current || 1 })
     .catch(e => console.log("saveMessage bot error:", e.message));
