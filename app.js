@@ -32,6 +32,7 @@ import {
   savePurchase,
   buildFanContext,
   saveMessage,
+  getMessages,
   checkTakeover,
   setTakeover,
 } from "./database/memoryDB.js";
@@ -510,6 +511,7 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
     }),
   });
   const data = await response.json();
+  if (!data.choices || !data.choices[0]) throw new Error(`Grok returned no choices: ${JSON.stringify(data).substring(0, 200)}`);
   return data.choices[0].message.content;
 }
 
@@ -528,6 +530,7 @@ async function classifyImage(imageUrl) {
     }),
   });
   const data = await response.json();
+  if (!data.choices || !data.choices[0]) return 'other';
   return data.choices[0].message.content.trim();
 }
 
