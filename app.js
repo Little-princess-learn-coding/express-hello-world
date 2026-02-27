@@ -284,10 +284,6 @@ function detectMutualGoodbye(user, botReply, userText) {
 
 /* ================== STAGE SYSTEM ================== */
 
-function detectFastLane(text) {
-  return /(cosplay|cosplayer|game|gamer|hobby|anime|what do you like|what are you into)/i.test(text);
-}
-
 function detectAskForPhotos(text) {
   return /(see.*photo|see.*pic|your photo|your pics|show me|can i see|your cosplay)/i.test(text);
 }
@@ -388,7 +384,8 @@ function detectStageTransition(user, text) {
 
 function getStageInstructions(user) {
   const stage = user.stages?.current || 1;
-  return `${FIRST_SALE_GUIDE}\n\nCurrent Stage: ${stage}\nFocus on Stage ${stage} instructions above.`;
+  const stageLabel = stage === "5A" ? "5 (SOFT SALE)" : stage;
+  return `${FIRST_SALE_GUIDE}\n\n==============================\nCURRENT CHECKPOINT: ${stageLabel}\n==============================\nFollow CHECKPOINT ${stageLabel} instructions above. Stay in this checkpoint unless the user naturally leads forward.`;
 }
 
 /* ================== REPEAT SALE STRATEGY ================== */
@@ -1603,6 +1600,9 @@ async function processUserMessage(chatId, text, user) {
   }
 
   const modelChoice = decideModel(user, intentData);
+
+  // Log current stage every message
+  console.log(`📊 [${chatId}] Stage: ${user.stages?.current || 1} | Mood: ${intentData.mood} | Msgs: ${user.message_count} | Weekly sales: ${user.state.weeklySaleAttempts || 0}/3`);
 
   // Detect "how about u / and u / what about u" — inject explicit hint so AI understands
   let textForAI = text;
