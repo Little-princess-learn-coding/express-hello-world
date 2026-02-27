@@ -1,4 +1,4 @@
-module.exports = `
+const REPEATED_SALE_GUIDE = `
 REPEATED SALE STRATEGY LIBRARY
 
 This guide is used ONLY when the system allows a repeat sale attempt.
@@ -335,3 +335,5 @@ END RULE
 - Pricing should always sound flexible and optional
 - Never demand or pressure for specific amounts
 `;
+
+export default REPEATED_SALE_GUIDE;
