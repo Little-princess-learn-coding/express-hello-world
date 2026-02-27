@@ -47,7 +47,6 @@ import {
   getLastSentGift,
 } from "./assets/assetEngine.js";
 import { registerAsset, invalidateAssetCache, getRandomAssetByType } from "./assets/assetRegistry.js";
-import { getCatalog, invalidateCatalogCache, sendAlbumPreview } from "./payment/ppvStore.js";
 
 import {
   sendAsset,
@@ -71,6 +70,8 @@ import {
   sendAlbumPreview,
   sendShopHome,
   deliverContent,
+  getCatalog,
+  invalidateCatalogCache,
   CATALOG,
 } from "./payment/ppvStore.js";
 
