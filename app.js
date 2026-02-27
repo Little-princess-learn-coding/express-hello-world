@@ -47,7 +47,7 @@ import {
   getLastSentGift,
 } from "./assets/assetEngine.js";
 import { registerAsset, invalidateAssetCache, getRandomAssetByType } from "./assets/assetRegistry.js";
-import { getCatalog, invalidateCatalogCache } from "./payment/ppvStore.js";
+import { getCatalog, invalidateCatalogCache, sendAlbumPreview } from "./payment/ppvStore.js";
 
 import {
   sendAsset,
@@ -435,26 +435,44 @@ function shouldAttemptSaleByTiming(user) {
   if (!user.state.weeklyResetAt) user.state.weeklyResetAt = now;
 
   const weekMs = 7 * 24 * 60 * 60 * 1000;
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  // Reset weekly counter
   if (now - user.state.weeklyResetAt >= weekMs) {
     user.state.weeklySaleAttempts = 0;
     user.state.weeklyResetAt = now;
   }
 
-  if (user.state.weeklySaleAttempts >= 3)
-    return { allow: false, reason: `Weekly limit reached (${user.state.weeklySaleAttempts}/3)` };
+  const weeklySales = user.state.weeklySaleAttempts || 0;
+  const daysSinceReset = (now - user.state.weeklyResetAt) / dayMs;
 
+  // Hard cap: max 3 per week
+  if (weeklySales >= 3)
+    return { allow: false, reason: `Weekly limit reached (${weeklySales}/3)` };
+
+  // Cooldown between attempts
   if (user.state.lastSaleAt) {
     const hoursSince = (now - user.state.lastSaleAt) / (1000 * 60 * 60);
     const minCooldown = isSupporter(user.state) ? 24 : 48;
-    if (hoursSince < minCooldown)
+    if (hoursSince < minCooldown) {
+      // FORCE override if week is running out and minimum not met
+      // Need 2/week minimum — force if day 5+ and still < 2 attempts
+      const weekAlmostOver = daysSinceReset >= 5;
+      const belowMinimum = weeklySales < 2;
+      if (weekAlmostOver && belowMinimum) {
+        console.log(`⚡ Force sale override — day ${Math.floor(daysSinceReset)}, only ${weeklySales}/2 attempts this week`);
+        return { allow: true, force: true, reason: `Forced — week ending, only ${weeklySales}/2 sales done` };
+      }
       return { allow: false, reason: `Cooldown active (${Math.round(minCooldown - hoursSince)}h remaining)` };
+    }
   }
 
-  const daysSinceReset = (now - user.state.weeklyResetAt) / (1000 * 60 * 60 * 24);
-  if (daysSinceReset >= 6 && user.state.weeklySaleAttempts === 0)
-    return { allow: true, force: true, reason: "Weekly minimum requirement" };
+  // Force sale if day 4+ and below minimum (2/week)
+  if (daysSinceReset >= 4 && weeklySales < 2) {
+    return { allow: true, force: true, reason: `Forced — day ${Math.floor(daysSinceReset)}, need ${2 - weeklySales} more sale(s) this week` };
+  }
 
-  return { allow: true, reason: "Timing check passed" };
+  return { allow: true, force: false, reason: "Timing check passed" };
 }
 
 /* ================== CONTEXT CHECKING ================== */
@@ -1572,6 +1590,17 @@ async function processUserMessage(chatId, text, user) {
   else if (intentData.intent === "normal") user.conversation_mode = "chatting";
 
   applyIntent(user, intentData);
+
+  // Detect stage transitions (including stage5A)
+  const stageTransition = detectStageTransition(user, text);
+  if (stageTransition) {
+    console.log(`📍 Stage transition: ${stageTransition.trigger} — ${stageTransition.reason}`);
+    // If stage5A triggered by user asking for photos, override strategy
+    if (stageTransition.trigger === "stage_5A" || stageTransition.trigger === "stage_5A_mild") {
+      // Will be handled in strategy selection below via stage5A_triggered flag
+    }
+  }
+
   const modelChoice = decideModel(user, intentData);
 
   // Detect "how about u / and u / what about u" — inject explicit hint so AI understands
@@ -1595,13 +1624,53 @@ async function processUserMessage(chatId, text, user) {
     }
   }
 
+  // ===== STRATEGY SELECTION =====
+  let currentStrategy = null;
+  let selectedStrategyObj = null;
+
+  const timingCheck = shouldAttemptSaleByTiming(user);
+  const contextCheck = isConversationSuitableForSale(user, intentData, user.recentMessages);
+
+  // Force sale bypasses context check (mood/topic) but never bypasses negative mood
+  const canAttemptSale = timingCheck.allow && (contextCheck.suitable || timingCheck.force);
+  const isForced = timingCheck.force && intentData.mood !== "negative";
+
+  if (canAttemptSale) {
+    const hasPurchased = (user.state.successfulSales || 0) > 0;
+
+    if (user.stages?.stage5A_triggered) {
+      currentStrategy = "stage_5A";
+    } else if (intentData.saleResponse === "yes" || detectAskForPhotos(text)) {
+      currentStrategy = "user_initiated_sale";
+    } else if (isForced || (!hasPurchased && user.message_count >= 5)) {
+      // Force or first time: use first_sale if no purchase, repeat_sale if has purchased
+      if (hasPurchased) {
+        selectedStrategyObj = selectRepeatStrategy(user, intentData, user.recentMessages);
+        currentStrategy = "repeat_sale";
+      } else {
+        currentStrategy = "first_sale";
+      }
+    } else if (hasPurchased) {
+      selectedStrategyObj = selectRepeatStrategy(user, intentData, user.recentMessages);
+      currentStrategy = "repeat_sale";
+    }
+
+    if (currentStrategy) {
+      const label = isForced ? "🔴 FORCED" : "🎯";
+      console.log(`${label} Strategy: ${currentStrategy} | ${timingCheck.reason}`);
+      onSaleAttempt(user.state);
+    }
+  } else {
+    console.log(`⏭️ No sale: ${timingCheck.allow ? contextCheck.reason : timingCheck.reason}`);
+  }
+
   userBotReplying.add(chatId);
   let replyText;
   try {
     if (modelChoice === "openai") {
-      replyText = await callOpenAI(buildPreciseOpenAIPrompt(user, null), textForAI);
+      replyText = await callOpenAI(buildPreciseOpenAIPrompt(user, currentStrategy), textForAI);
     } else {
-      replyText = await callGrok(buildPreciseGrokPrompt(user, null, null), await buildContextPrompt(user, null, getTimeContext()), textForAI);
+      replyText = await callGrok(buildPreciseGrokPrompt(user, currentStrategy, selectedStrategyObj), await buildContextPrompt(user, currentStrategy, getTimeContext()), textForAI);
     }
   } catch (err) {
     console.error("❌ Queue AI failed:", err.message);
@@ -1618,6 +1687,28 @@ async function processUserMessage(chatId, text, user) {
   const quoteId = user.lastIncomingMessageId || null;
   await sendBurstReplies(user, chatId, cleanReplyText, quoteId);
   user.lastIncomingMessageId = null; // reset after use
+
+  // If stage5A triggered — send PPV album preview after bot reply
+  if (currentStrategy === "stage_5A" && user.stages?.stage5A_triggered) {
+    try {
+      await sleep(2000); // small delay so preview feels natural
+      const catalog = await getCatalog();
+      const catalogIds = Object.keys(catalog || {});
+      if (catalogIds.length > 0) {
+        const albumToOffer = catalogIds[0]; // offer first album, or pick best match
+        await sendAlbumPreview(chatId, albumToOffer);
+        console.log(`📸 PPV preview sent to ${chatId}: ${albumToOffer}`);
+        user.stages.stage5A_triggered = false; // reset so it doesn't re-trigger every message
+        updateStage(user, 6, "Stage 5A completed — PPV preview sent");
+        onSaleAttempt(user.state);
+      } else {
+        console.log(`⚠️ No PPV products in catalog for ${chatId}`);
+      }
+    } catch (e) {
+      console.error("PPV preview error:", e.message);
+    }
+  }
+
   await logBotMessage(chatId, cleanReplyText);
   saveMessage(chatId, { role: "bot", content: cleanReplyText, stage: user.stages?.current || 1 })
     .catch(e => console.log("saveMessage bot error:", e.message));
