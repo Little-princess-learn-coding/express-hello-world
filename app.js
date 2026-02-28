@@ -1570,6 +1570,10 @@ async function processUserMessage(chatId, text, user) {
   user.recentMessages.push(`User: ${text}`);
   if (user.recentMessages.length > 20) user.recentMessages.shift();
 
+  // Save user message to DB so dashboard shows it
+  saveMessage(chatId, { role: 'fan', content: text, stage: user.stages?.current || 1 })
+    .catch(e => console.log('saveMessage fan error:', e.message));
+
   const { intent: intentData, facts: extractedFacts } = await classifyMessageAndExtractFacts(user, text, user.recentMessages);
   await refreshConversationSummary(user);
 
@@ -1688,6 +1692,45 @@ async function processUserMessage(chatId, text, user) {
   const quoteId = user.lastIncomingMessageId || null;
   await sendBurstReplies(user, chatId, cleanReplyText, quoteId);
   user.lastIncomingMessageId = null; // reset after use
+
+  // Send asset if AI included [SEND_ASSET:...] marker
+  if (assetMarkers.hasAsset && !user.wind_down) {
+    try {
+      await sleep(1500);
+      const assetData = getAssetToSend(assetMarkers, 0, chatId);
+      if (assetData) {
+        const { asset, shouldScheduleConfirmation, shouldSendImage } = assetData;
+        if (shouldSendImage) {
+          await sendUploadPhoto(chatId);
+          await sleep(800);
+          const sendResult = await sendAsset(chatId, asset);
+          if (sendResult?.ok) {
+            console.log(`✅ Asset sent: ${asset.assetId}`);
+            // Save asset to DB so it appears in dashboard
+            saveMessage(chatId, { role: "bot", content: "[photo]", media_type: "photo", file_id: asset.fileId || null, stage: user.stages?.current || 1 })
+              .catch(() => {});
+          } else {
+            console.error(`❌ Asset failed: ${asset.assetId}`);
+          }
+        }
+        if (shouldScheduleConfirmation) {
+          user.pending_gift_id = asset.assetId;
+          user.pending_gift_asset = asset;
+          console.log(`📦 Gift pending payment: ${asset.assetId}`);
+        }
+      }
+    } catch (e) {
+      console.error("Asset send error:", e.message);
+    }
+  }
+
+  // Save delivered file_ids (e.g. from exclusive selfie)
+  if (assetMarkers.deliveredFileIds?.length > 0) {
+    for (const fid of assetMarkers.deliveredFileIds) {
+      saveMessage(chatId, { role: "bot", content: "[photo]", media_type: "photo", file_id: fid, stage: user.stages?.current || 1 })
+        .catch(() => {});
+    }
+  }
 
   // If stage5A triggered — send PPV album preview after bot reply
   if (currentStrategy === "stage_5A" && user.stages?.stage5A_triggered) {
@@ -1928,6 +1971,63 @@ app.post("/api/takeover", async (req, res) => {
   if (!chatId) return res.status(400).json({ error: "Missing chatId" });
   await setTakeover(chatId, active);
   res.json({ ok: true, chatId, active });
+});
+
+
+// ============================================================
+// RESET TEST DATA — xóa data của 1 chatId hoặc toàn bộ trước ngày nhất định
+// POST /api/reset-test  { secret, chatId? }         → xóa 1 user
+// POST /api/reset-test  { secret, beforeDate? }     → xóa tất cả trước ngày đó
+// POST /api/reset-test  { secret, all: true }       → xóa TOÀN BỘ (cẩn thận!)
+// ============================================================
+app.post("/api/reset-test", async (req, res) => {
+  const { secret, chatId, beforeDate, all } = req.body;
+
+  // Simple secret check — set ADMIN_SECRET in Render env vars
+  const ADMIN_SECRET = process.env.ADMIN_SECRET || "aurelia-admin-2024";
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: "Forbidden" });
+
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+  const tables = ["messages", "fan_memories", "conversation_summaries", "purchases", "fan_profiles", "takeovers"];
+  const results = {};
+
+  try {
+    for (const table of tables) {
+      let query = sb.from(table).delete();
+
+      if (chatId) {
+        // Xóa 1 user cụ thể
+        query = query.eq("chat_id", chatId);
+      } else if (beforeDate) {
+        // Xóa tất cả record trước ngày nhất định (ISO string, e.g. "2025-03-01")
+        query = query.lt("created_at", beforeDate);
+      } else if (all) {
+        // Xóa toàn bộ — dùng neq để bypass Supabase require filter
+        query = query.neq("chat_id", "__never__");
+      } else {
+        return res.status(400).json({ error: "Must provide chatId, beforeDate, or all:true" });
+      }
+
+      const { error, count } = await query;
+      results[table] = error ? `error: ${error.message}` : `deleted`;
+    }
+
+    // Also clear in-memory users if chatId specified
+    if (chatId && users[chatId]) {
+      delete users[chatId];
+      console.log(`🗑️ Cleared in-memory user: ${chatId}`);
+    } else if (all) {
+      Object.keys(users).forEach(k => delete users[k]);
+      console.log("🗑️ Cleared ALL in-memory users");
+    }
+
+    console.log("🗑️ Reset test data:", results);
+    res.json({ ok: true, results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // GET stats
