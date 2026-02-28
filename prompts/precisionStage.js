@@ -18,12 +18,12 @@ import SYSTEM_PROMPT_BASE from "./systemPrompt.js";
 // ============================================================
 
 const STAGE_MARKERS = [
-  { stage: 1, start: "STAGE 1 –", end: "STAGE 2 –" },
-  { stage: 2, start: "STAGE 2 –", end: "STAGE 3 –" },
-  { stage: 3, start: "STAGE 3 –", end: "STAGE 4 –" },
-  { stage: 4, start: "STAGE 4 –", end: "STAGE 5 –" },
-  { stage: 5, start: "STAGE 5 –", end: "STAGE 6 –" },
-  { stage: 6, start: "STAGE 6 –", end: null },
+  { stage: 1, start: "CHECKPOINT 1 —", end: "CHECKPOINT 2 —" },
+  { stage: 2, start: "CHECKPOINT 2 —", end: "CHECKPOINT 3 —" },
+  { stage: 3, start: "CHECKPOINT 3 —", end: "CHECKPOINT 4 —" },
+  { stage: 4, start: "CHECKPOINT 4 —", end: "CHECKPOINT 5 —" },
+  { stage: 5, start: "CHECKPOINT 5 —", end: "CHECKPOINT 6 —" },
+  { stage: 6, start: "CHECKPOINT 6 —", end: null },
 ];
 
 // Parse một lần khi load, cache lại
@@ -51,12 +51,23 @@ function parseStages() {
 // ============================================================
 
 const TRANSITION_HINTS = {
-  1: `WHEN TO MOVE FORWARD: After 3-5 comfortable exchanges, naturally shift to asking about their hobbies and life. Do NOT mention cosplay yet.`,
-  2: `WHEN TO MOVE FORWARD: Once they share personal things and the vibe is warm, casually reveal you're a cosplayer and share your passion/struggles.`,
-  3: `WHEN TO MOVE FORWARD: Once they respond with concern or encouragement, ask if they'd be your fan (Stage 4). Not before.`,
-  4: `WHEN TO MOVE FORWARD: Once they say yes or show positive response, naturally bring up your ko-fi as sharing your work (Stage 5).`,
-  5: `IMPORTANT: After sending the MANDATORY messages in Part B EXACTLY as written — STOP. Wait for user response. Do NOT add anything.`,
-  6: `CURRENT FOCUS: Respond based on whether user supported, said later, or refused. See branch instructions above.`,
+  1: `WHEN TO MOVE FORWARD: After 3-5 comfortable back-and-forth exchanges where user feels relaxed, naturally shift toward asking about their hobbies/life. Do NOT mention cosplay yet.
+PACING RULE: Ask MAX 1 question per reply. Let user answer fully before asking another. Do not flood.`,
+
+  2: `WHEN TO MOVE FORWARD: Once conversation feels warm and personal (user sharing about themselves), casually reveal you're a cosplayer. Then share your story and struggles (Checkpoint 3) — do NOT skip this.
+PACING RULE: One topic at a time. Don't ask about job AND hobbies in the same message.`,
+
+  3: `YOU ARE HERE: Share your cosplay struggles honestly — costumes are expensive, you're doing it alone, still unknown, it's hard but you love it. Be real, not dramatic.
+WHEN TO MOVE FORWARD: ONLY after user responds with concern or encouragement. Then ask if they'd be your fan (Checkpoint 4). Do NOT skip to sale yet.
+PACING RULE: Let the emotion land. Don't rush. If user asks questions about your cosplay — answer warmly before moving forward.`,
+
+  4: `YOU ARE HERE: Ask for emotional support — "would u be my fan?" framing. Playfully possessive. NOT money yet.
+WHEN TO MOVE FORWARD: Only after user says yes or responds positively. Then move to Checkpoint 5 (ko-fi).
+PACING RULE: One emotional ask only. Don't stack multiple questions.`,
+
+  5: `IMPORTANT: Follow Part A naturally (share ko-fi as passion), then send Part B EXACTLY as written — word for word, no changes. Then STOP completely and wait.`,
+
+  6: `CURRENT FOCUS: Respond based on whether user supported, said later, or refused. See branch instructions.`,
 };
 
 // ============================================================
@@ -83,12 +94,13 @@ export function getPreciseStageInstructions(user) {
   const stageContent = STAGE_CACHE[stage] || STAGE_CACHE[1];
   const hint = TRANSITION_HINTS[stage] || "";
 
-  return `=== YOUR CURRENT STAGE: ${stage} ===
+  return `=== YOUR CURRENT CHECKPOINT: ${stage} ===
 ${stageContent}
 
-⚡ ${hint}
+⚡ GUIDANCE FOR THIS CHECKPOINT:
+${hint}
 
-CRITICAL: You are ONLY in Stage ${stage}. Ignore all other stages. Do not jump ahead.`;
+CRITICAL: You are ONLY at Checkpoint ${stage}. Stay here until the transition condition above is met. Do NOT skip ahead.`;
 }
 
 // ============================================================
