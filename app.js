@@ -784,7 +784,7 @@ const userBotReplying = new Set();
 const userBotSending = new Set();
 const userMessageQueue = new Map();
 /* ================== MESSAGE BATCH BUFFER ================== */
-// Gom tin nhắn liên tiếp của user trong 2.5s rồi xử lý 1 lần duy nhất
+// Gom tin nhắn liên tiếp của user trong 5s rồi xử lý 1 lần duy nhất
 const messageBatchBuffer = new Map(); // chatId → { messages: [{text, messageId}], timer }
 
 function flushMessageBatch(chatId) {
@@ -842,8 +842,18 @@ function bufferOrFlushMessage(chatId, text, messageId) {
   const batch = messageBatchBuffer.get(chatId);
   clearTimeout(batch.timer);
   batch.messages.push({ text, messageId });
-  // Đợi 2.5s sau tin nhắn cuối cùng mới flush
-  batch.timer = setTimeout(() => flushMessageBatch(chatId), 4000);
+
+  // Dynamic batch window: 9s if bot just asked a question, 4s otherwise
+  const userObj = users[chatId];
+  const lastBot = userObj?.recentMessages
+    ? [...userObj.recentMessages].reverse().find(m => m.startsWith("Aurelia:"))
+    : null;
+  const lastBotText = lastBot ? lastBot.replace(/^Aurelia:\s*/, "").trim() : "";
+  const botJustAskedQuestion = /[?]\s*$/.test(lastBotText);
+  const batchDelay = botJustAskedQuestion ? 9000 : 4000;
+  console.log(`⏱️ Batch window: ${batchDelay/1000}s ${botJustAskedQuestion ? '(bot asked question)' : ''}`);
+
+  batch.timer = setTimeout(() => flushMessageBatch(chatId), batchDelay);
 }
 
 
@@ -1539,7 +1549,7 @@ app.post("/webhook", async (req, res) => {
   }
 
   /* ========= BATCH BUFFER ========= */
-  // Gom tin nhắn liên tiếp, flush sau 2.5s → bot rep tổng hợp 1 lần thay vì rep từng cái
+  // Gom tin nhắn liên tiếp, flush sau 5s → bot rep tổng hợp 1 lần thay vì rep từng cái
   bufferOrFlushMessage(chatId, text, messageId);
   return res.sendStatus(200);
 });
@@ -1582,7 +1592,21 @@ async function processUserMessage(chatId, text, user) {
     for (const key in extractedFacts) {
       if (extractedFacts[key] && !user.memoryFacts[key]) newFacts[key] = extractedFacts[key];
     }
-    if (Object.keys(newFacts).length > 0) { Object.assign(user.memoryFacts, newFacts); console.log(`💾 Saved:`, newFacts); }
+    if (Object.keys(newFacts).length > 0) {
+      Object.assign(user.memoryFacts, newFacts);
+      console.log(`💾 Saved facts:`, newFacts);
+      // Persist facts to Supabase immediately so dashboard shows them
+      saveFanProfile(chatId, {
+        name: user.memoryFacts.name || undefined,
+        age: user.memoryFacts.age || undefined,
+        location: user.memoryFacts.location || undefined,
+        job: user.memoryFacts.job || undefined,
+        message_count: user.message_count,
+        stage: user.stages?.current || 1,
+        relationship_state: user.state.relationship_state,
+        relationship_level: user.relationship_level,
+      }).catch(e => console.log('saveFanProfile facts error:', e.message));
+    }
   }
 
   // ✅ NEW: Update context
