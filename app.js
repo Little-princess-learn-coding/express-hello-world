@@ -1998,6 +1998,75 @@ app.post("/api/takeover", async (req, res) => {
 });
 
 
+
+// ============================================================
+// ADMIN UPDATE FAN STATE — dùng khi Human Takeover
+// POST /api/admin-update-fan { chatId, relationship_state?, stage?, add_spent?, has_purchased?, purchase_note? }
+// ============================================================
+app.post("/api/admin-update-fan", async (req, res) => {
+  const { chatId, relationship_state, stage, add_spent, has_purchased, purchase_note, name, age, location, job } = req.body;
+  if (!chatId) return res.status(400).json({ error: "Missing chatId" });
+
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+  try {
+    // 1. Build fan_profiles update
+    const profileUpdate = { last_active: new Date().toISOString() };
+    if (relationship_state) profileUpdate.relationship_state = relationship_state;
+    if (stage) profileUpdate.stage = stage;
+    if (has_purchased) profileUpdate.has_purchased = true;
+    if (name) profileUpdate.name = name;
+    if (age) profileUpdate.age = age;
+    if (location) profileUpdate.location = location;
+    if (job) profileUpdate.job = job;
+
+    // If adding spent amount — get current first
+    if (add_spent > 0) {
+      const { data: current } = await sb.from("fan_profiles").select("total_spent, purchase_count").eq("chat_id", chatId).single();
+      profileUpdate.total_spent = (current?.total_spent || 0) + add_spent;
+      profileUpdate.purchase_count = (current?.purchase_count || 0) + 1;
+      profileUpdate.last_purchase_at = new Date().toISOString();
+    }
+
+    await sb.from("fan_profiles").update(profileUpdate).eq("chat_id", chatId);
+
+    // 2. Log purchase if amount provided
+    if (add_spent > 0) {
+      await sb.from("purchases").insert({
+        chat_id: chatId,
+        amount: add_spent,
+        item: purchase_note || "manual entry (human takeover)",
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    // 3. Sync to in-memory user if loaded
+    const user = users[chatId];
+    if (user) {
+      if (relationship_state) user.state.relationship_state = relationship_state;
+      if (stage) { if (!user.stages) user.stages = {}; user.stages.current = stage; }
+      if (add_spent > 0) {
+        user.state.total_spent = (user.state.total_spent || 0) + add_spent;
+        user.state.purchase_count = (user.state.purchase_count || 0) + 1;
+        user.state.has_purchased = true;
+      }
+      if (has_purchased) user.state.has_purchased = true;
+      if (!user.memoryFacts) user.memoryFacts = {};
+      if (name) user.memoryFacts.name = name;
+      if (age) user.memoryFacts.age = age;
+      if (location) user.memoryFacts.location = location;
+      if (job) user.memoryFacts.job = job;
+      console.log(`⚙️ Admin updated fan ${chatId}:`, { relationship_state, stage, add_spent });
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("admin-update-fan error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ============================================================
 // RESET TEST DATA — xóa data của 1 chatId hoặc toàn bộ trước ngày nhất định
 // POST /api/reset-test  { secret, chatId? }         → xóa 1 user
