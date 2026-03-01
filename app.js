@@ -1165,21 +1165,21 @@ async function sendTyping(chatId) {
 }
 
 function splitIntoBursts(text) {
-  const parts = text.split(/\n+/).map(t => t.trim()).filter(Boolean);
-  if (parts.length === 1) {
-    return parts[0].split(/(?<=[.!?~])\s+/).map(t => t.trim()).filter(Boolean);
+  // Split by newlines first
+  let parts = text.split(/\n+/).map(t => t.trim()).filter(Boolean);
+  // Deduplicate consecutive identical lines
+  parts = parts.filter((p, i) => i === 0 || p.toLowerCase() !== parts[i-1].toLowerCase());
+  // Cap at 4 bubbles max
+  if (parts.length > 4) {
+    parts = [...parts.slice(0, 3), parts.slice(3).join(' ')];
   }
   return parts;
 }
 
 // ✅ UPDATED: Thêm replyToMessageId parameter
 async function sendBurstReplies(user, chatId, text, replyToMessageId = null) {
-  const parts = splitIntoBursts(text);
-  // Gửi tất cả parts — không giới hạn số bubble
-  // Nhưng cap ở 4 để tránh spam quá nhiều
-  const limitedParts = parts.length <= 4
-    ? parts
-    : [...parts.slice(0, 3), parts.slice(3).join(' ')];
+  const parts = splitIntoBursts(text); // already capped at 4 and deduplicated
+  const limitedParts = parts;
 
   userBotSending.add(chatId);
   try {
@@ -1971,6 +1971,12 @@ async function processUserMessage(chatId, text, user) {
 
   user.recentMessages.push(`Aurelia: ${cleanReplyText}`);
   if (user.recentMessages.length > 12) user.recentMessages.shift();
+
+  // Track if kofi link has been sent — prevent bot asking "wanna see photos?" again
+  if (/ko-fi\.com|ko-fi link/i.test(cleanReplyText)) {
+    user.kofi_link_sent = true;
+    console.log(`🔗 Ko-fi link sent to ${chatId} — blocking repeat photo asks`);
+  }
 
   updateConversationContext(user, cleanReplyText, "bot");
 
