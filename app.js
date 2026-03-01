@@ -583,6 +583,45 @@ async function sendAdminAlert(message, errorKey = 'general') {
   }
 }
 
+
+// ============================================================
+// STICKER SYSTEM — Marin pack
+// ============================================================
+const STICKERS = {
+  angry:      "CAACAgQAAxkBAAFDiO5ppFm0cCT7oIS4ojdUj66x6NJHCQACaQsAAre70FIzJa4a5f7NvToE",
+  surprised:  "CAACAgQAAxkBAAFDiPBppFnI6lpsOY7YOGc5eJLAau5BwgACSQsAAhXV0VK8wHUgsMWvXToE",
+  sad:        "CAACAgQAAxkBAAFDiTNppFxs873Zvi7npGa0VhDpVZJK0wACYg0AAspQGFLNPmFBkoBsSzoE",
+  happy:      "CAACAgIAAxkBAAFDiXlppF6lT5nP9myn71guDe-4heUQKgAC1yoAAseSyUuxXUyuvUurazoE",
+  shocked:    "CAACAgQAAxkBAAFDiX9ppF75kKjhtA2ddgx6PhiE6qed0AACuhoAAl52AVB_Wt476W7mazoE",
+  shy:        "CAACAgQAAxkBAAFDiaJppGAYGCRbT-xYwx_1AWEAAVjw28AAAsoMAAJaRBlRxXyMOlDb_sg6BA",
+  confused:   "CAACAgIAAxkBAAFDia9ppGB4S-Q8MosYkb-wJPb8cmTIZgACOSYAAj3amUuAzzAGvwTUBDoE",
+  sulking:    "CAACAgIAAxkBAAFDid1ppGHzjqkKUriMCdvmQmgqftJ4uwACXSIAAmMpmEvvYHzE_5UL9DoE",
+  annoyed:    "CAACAgIAAxkBAAFDicJppGD64SNNKIAbhCm9Jap-YfKOAQACliIAAu0GoEvhvm7jT7mM4DoE",
+  teasing:    "CAACAgIAAxkBAAFDic1ppGFsMUQ7yDj1OuPlib_4YwY6EQACZycAAiOwUUhkIRxPG7T_6zoE",
+  cry:        "CAACAgQAAxkBAAFDiQ5ppFtw7Fdk8trNU0CgfJ9W9f444gACaiEAAh2CCVCC7VPWwM_iIToE",
+};
+
+async function sendSticker(chatId, emotion) {
+  const fileId = STICKERS[emotion];
+  if (!fileId) return;
+  await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendSticker`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, sticker: fileId }),
+  });
+  console.log(`🎭 Sticker sent: ${emotion}`);
+}
+
+// Parse [STICKER:emotion] marker from AI reply
+function parseStickerMarker(text) {
+  const match = text.match(/\[STICKER:(\w+)\]/i);
+  if (!match) return { emotion: null, cleanText: text };
+  return {
+    emotion: match[1].toLowerCase(),
+    cleanText: text.replace(match[0], "").trim(),
+  };
+}
+
 async function callOpenAI(systemPrompt, userMessage) {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -1089,10 +1128,15 @@ function getTimeContext() {
 }
 
 function calculateDelay(user, replyText) {
-  const baseDelay = { stranger: 1200, casual: 800, supporter: 500 }[user.state.relationship_state] || 1000;
-  const perChar = 25;
-  const random = Math.random() * 500;
-  return Math.min(baseDelay + replyText.length * perChar + random, 6000);
+  // Base delay by relationship — stranger feels slower/more hesitant
+  const baseDelay = { stranger: 1500, casual: 1000, supporter: 700 }[user.state.relationship_state] || 1200;
+  // Typing speed: ~45ms per char (realistic human typing ~220 chars/min)
+  const perChar = 45;
+  // Random human variance: ±800ms
+  const random = (Math.random() - 0.3) * 800;
+  // Short messages: 1.5s–3s, long messages: up to 10s
+  const raw = baseDelay + replyText.length * perChar + random;
+  return Math.max(1500, Math.min(raw, 10000));
 }
 
 function shouldDelayFirstReply(user) {
@@ -1148,9 +1192,12 @@ async function sendBurstReplies(user, chatId, text, replyToMessageId = null) {
     user.firstReplySent = true;
 
     for (let i = 0; i < limitedParts.length; i++) {
-      await sendTyping(chatId);
       const delay = calculateDelay(user, limitedParts[i]);
+      // Loop typing indicator every 4s so it stays visible for long messages
+      const typingInterval = setInterval(() => sendTyping(chatId), 4000);
+      await sendTyping(chatId);
       await sleep(delay);
+      clearInterval(typingInterval);
 
       // ✅ Quote reply chỉ cho tin đầu tiên trong burst
       const shouldQuote = i === 0 && replyToMessageId !== null;
@@ -1844,10 +1891,18 @@ async function processUserMessage(chatId, text, user) {
   const cleanReplyText = assetMarkers.cleanResponse;
   userBotReplying.delete(chatId);
 
-  // Queue messages don't have original messageId, so no quote reply
-  // Quote-reply to the last user message (shows reply bubble like image 3)
+  // Parse sticker marker from AI reply
+  const { emotion: stickerEmotion, cleanText: textWithoutSticker } = parseStickerMarker(cleanReplyText);
+
+  // Quote-reply to the last user message
   const quoteId = user.lastIncomingMessageId || null;
-  await sendBurstReplies(user, chatId, cleanReplyText, quoteId);
+  await sendBurstReplies(user, chatId, textWithoutSticker, quoteId);
+
+  // Send sticker after text if AI requested one
+  if (stickerEmotion && STICKERS[stickerEmotion]) {
+    await sleep(600);
+    await sendSticker(chatId, stickerEmotion);
+  }
   user.lastIncomingMessageId = null; // reset after use
 
   // Send asset if AI included [SEND_ASSET:...] marker
