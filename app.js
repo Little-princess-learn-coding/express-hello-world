@@ -495,6 +495,60 @@ function isConversationSuitableForSale(user, intentData, recentMessages) {
 
 /* ================== AI CALLS ================== */
 
+
+// ============================================================
+// VOICE TRANSCRIPTION — Groq Whisper
+// Download .ogg từ Telegram → transcribe → return text
+// ============================================================
+async function transcribeVoice(fileId) {
+  try {
+    // Step 1: Get file path from Telegram
+    const fileInfoRes = await fetch(
+      `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`
+    );
+    const fileInfo = await fileInfoRes.json();
+    if (!fileInfo.ok) throw new Error('getFile failed: ' + JSON.stringify(fileInfo));
+    const filePath = fileInfo.result.file_path;
+
+    // Step 2: Download file as buffer
+    const fileRes = await fetch(
+      `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`
+    );
+    if (!fileRes.ok) throw new Error('File download failed');
+    const arrayBuffer = await fileRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Step 3: Send to Groq Whisper via FormData
+    const FormData = (await import('form-data')).default;
+    const form = new FormData();
+    form.append('file', buffer, { filename: 'voice.ogg', contentType: 'audio/ogg' });
+    form.append('model', 'whisper-large-v3-turbo');
+    form.append('response_format', 'text');
+    // Hint: fan is likely speaking English or Vietnamese
+    form.append('language', 'en');
+
+    const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        ...form.getHeaders(),
+      },
+      body: form,
+    });
+
+    if (!groqRes.ok) {
+      const err = await groqRes.text();
+      throw new Error('Groq Whisper error: ' + err);
+    }
+
+    const transcript = (await groqRes.text()).trim();
+    return transcript || null;
+  } catch (e) {
+    console.error('transcribeVoice error:', e.message);
+    return null;
+  }
+}
+
 async function callOpenAI(systemPrompt, userMessage) {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -1431,6 +1485,35 @@ app.post("/webhook", async (req, res) => {
       file_id: fanPhotoFileId,
       stage: users[chatId]?.stages?.current || 1,
     }).catch(() => {});
+    return res.sendStatus(200);
+  }
+
+
+  // ✅ Handle fan sending voice message — transcribe via Groq Whisper
+  if (message.voice || message.audio) {
+    const chatId = message.chat.id;
+    const fileId = message.voice?.file_id || message.audio?.file_id;
+    try {
+      const transcript = await transcribeVoice(fileId);
+      if (transcript) {
+        console.log(`🎙️ Voice transcribed [${chatId}]: "${transcript}"`);
+        // Save as text message to DB
+        saveMessage(chatId, {
+          role: 'fan',
+          content: `🎙️ ${transcript}`,
+          stage: users[chatId]?.stages?.current || 1,
+        }).catch(() => {});
+        // Process as normal text message
+        const user = await getOrCreateUser(chatId, message.from);
+        bufferOrFlushMessage(chatId, transcript, message.message_id);
+      } else {
+        // Transcription failed — let bot acknowledge
+        const user = await getOrCreateUser(chatId, message.from);
+        bufferOrFlushMessage(chatId, '[user sent a voice message but it could not be transcribed]', message.message_id);
+      }
+    } catch (e) {
+      console.error(`🎙️ Voice error [${chatId}]:`, e.message);
+    }
     return res.sendStatus(200);
   }
 
