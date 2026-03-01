@@ -537,8 +537,11 @@ async function transcribeVoice(fileId) {
     });
 
     if (!groqRes.ok) {
-      const err = await groqRes.text();
-      throw new Error('Groq Whisper error: ' + err);
+      const errText = await groqRes.text();
+      if (groqRes.status === 429 || errText.includes('quota')) {
+        sendAdminAlert('💳 Groq hết quota!\nVoice messages không được transcribe.\nKiểm tra tại: console.groq.com', 'groq_quota');
+      }
+      throw new Error('Groq Whisper error: ' + errText);
     }
 
     const transcript = (await groqRes.text()).trim();
@@ -546,6 +549,37 @@ async function transcribeVoice(fileId) {
   } catch (e) {
     console.error('transcribeVoice error:', e.message);
     return null;
+  }
+}
+
+
+// ============================================================
+// ADMIN ALERT — gửi Telegram message cho admin khi có lỗi nghiêm trọng
+// ============================================================
+const alertCooldowns = new Map(); // tránh spam alert cùng 1 lỗi
+
+async function sendAdminAlert(message, errorKey = 'general') {
+  // Cooldown 30 phút mỗi loại lỗi — tránh spam
+  const lastSent = alertCooldowns.get(errorKey) || 0;
+  if (Date.now() - lastSent < 30 * 60 * 1000) return;
+  alertCooldowns.set(errorKey, Date.now());
+
+  const adminIds = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!adminIds.length) return;
+
+  const time = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const text = `🚨 AURELIA ALERT\n\n${message}\n\n🕐 ${time}`;
+
+  for (const adminId of adminIds) {
+    try {
+      await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: adminId, text }),
+      });
+    } catch (e) {
+      console.error('sendAdminAlert error:', e.message);
+    }
   }
 }
 
@@ -561,6 +595,14 @@ async function callOpenAI(systemPrompt, userMessage) {
     }),
   });
   const data = await response.json();
+  if (response.status === 401 || data.error?.code === 'invalid_api_key') {
+    sendAdminAlert('❌ OpenAI API key không hợp lệ hoặc đã bị thu hồi.\nKiểm tra lại OPENAI_API_KEY trong Render env.', 'openai_auth');
+    throw new Error('OpenAI auth error');
+  }
+  if (response.status === 429 || data.error?.code === 'insufficient_quota') {
+    sendAdminAlert('💳 OpenAI hết credit!\nBot không thể reply cho fans.\nNạp thêm tại: platform.openai.com/account/billing', 'openai_quota');
+    throw new Error('OpenAI quota exceeded');
+  }
   if (!data.choices || !data.choices[0]) throw new Error("OpenAI returned no choices");
   return data.choices[0].message.content;
 }
@@ -581,6 +623,14 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
     }),
   });
   const data = await response.json();
+  if (response.status === 401 || data.error?.code === 'invalid_api_key') {
+    sendAdminAlert('❌ xAI (Grok) API key không hợp lệ hoặc đã bị thu hồi.\nKiểm tra lại XAI_API_KEY trong Render env.', 'grok_auth');
+    throw new Error('Grok auth error');
+  }
+  if (response.status === 429 || data.error?.type === 'insufficient_quota') {
+    sendAdminAlert('💳 xAI (Grok) hết credit!\nBot không thể reply khi user flirty hoặc stage5A.\nNạp thêm tại: console.x.ai', 'grok_quota');
+    throw new Error('Grok quota exceeded');
+  }
   if (!data.choices || !data.choices[0]) throw new Error(`Grok returned no choices: ${JSON.stringify(data).substring(0, 200)}`);
   return data.choices[0].message.content;
 }
