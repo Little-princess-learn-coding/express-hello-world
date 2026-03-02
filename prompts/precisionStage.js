@@ -52,8 +52,8 @@ function parseStages() {
 
 const TRANSITION_HINTS = {
   1: `WHEN TO MOVE FORWARD: Only after ALL of these are true:
-  - At least 10-15 back-and-forth exchanges have happened
   - You know their country, name, age, job (all the fact)
+  - You 
   - Conversation feels genuinely warm — user is engaged and sharing, not just answering
   - You have reacted specifically to something they shared (not just "nice~")
   Do NOT mention cosplay yet. Do NOT rush.
