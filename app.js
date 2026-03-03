@@ -697,11 +697,14 @@ async function classifyMessageAndExtractFacts(user, userMessage, recentMessages)
   const systemPrompt = `You are an analyzer for a cosplayer chatbot named Aurelia.
 Analyze the user message and return TWO things in ONE JSON response:
 1. INTENT: intent ("flirt"|"normal"), mood ("positive"|"neutral"|"negative"), saleResponse ("yes"|"no"|"maybe"|"none"), windDown (bool)
-2. FACTS: name, age, location (city/country only), job — only if clearly mentioned
+2. FACTS: name, age, location (city/country only), job — ONLY extract from the USER's own message.
+   CRITICAL: Do NOT extract facts from Aurelia's messages. If Aurelia says "i'm 19" that is HER age, not the user's.
+   Only extract a fact if the USER explicitly states it about THEMSELVES in the current message.
+   Example: user says "i'm 28" → extract age=28. Bot says "i'm 19" → extract nothing.
 Respond ONLY in this exact JSON (no extra text):
 {"intent":"flirt or normal","mood":"positive or neutral or negative","saleResponse":"yes or no or maybe or none","windDown":false,"facts":{}}`;
 
-  const userPrompt = `Recent conversation:\n${conversationContext}\n\nCurrent message: "${userMessage}"\nSale status: ${user.has_asked_support}, mode: ${user.conversation_mode}`;
+  const userPrompt = `Recent conversation (for context only — do NOT extract facts from Aurelia's lines):\n${conversationContext}\n\nCurrent USER message to analyze: "${userMessage}"\nSale status: ${user.has_asked_support}, mode: ${user.conversation_mode}`;
 
   try {
     const response = await callOpenAI(systemPrompt, userPrompt);
