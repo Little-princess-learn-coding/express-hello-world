@@ -617,7 +617,7 @@ function parseStickerMarker(text) {
   if (!match) return { emotion: null, cleanText: text };
   return {
     emotion: match[1].toLowerCase(),
-    cleanText: text.replace(match[0], "").trim(),
+    cleanText: text.replace(match[0], "").replace(/  +/g, " ").trim(),
   };
 }
 
@@ -985,14 +985,14 @@ function bufferOrFlushMessage(chatId, text, messageId) {
   clearTimeout(batch.timer);
   batch.messages.push({ text, messageId });
 
-  // Dynamic batch window: 9s if bot just asked a question, 4s otherwise
+  // Dynamic batch window: 11s if bot just asked a question, 4s otherwise
   const userObj = users[chatId];
   const lastBot = userObj?.recentMessages
     ? [...userObj.recentMessages].reverse().find(m => m.startsWith("Aurelia:"))
     : null;
   const lastBotText = lastBot ? lastBot.replace(/^Aurelia:\s*/, "").trim() : "";
   const botJustAskedQuestion = /[?]\s*$/.test(lastBotText);
-  const batchDelay = botJustAskedQuestion ? 9000 : 4000;
+  const batchDelay = botJustAskedQuestion ? 11000 : 4000;
   console.log(`⏱️ Batch window: ${batchDelay/1000}s ${botJustAskedQuestion ? '(bot asked question)' : ''}`);
 
   batch.timer = setTimeout(() => flushMessageBatch(chatId), batchDelay);
@@ -1899,8 +1899,14 @@ async function processUserMessage(chatId, text, user) {
 
   // Send sticker after text if AI requested one
   if (stickerEmotion && STICKERS[stickerEmotion]) {
-    await sleep(600);
-    await sendSticker(chatId, stickerEmotion);
+    const botMsgsSinceSticker = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).length - (user.lastStickerMsgCount || 0);
+    if (!user.lastStickerMsgCount || botMsgsSinceSticker >= 5) {
+      await sleep(600);
+      await sendSticker(chatId, stickerEmotion);
+      user.lastStickerMsgCount = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).length;
+    } else {
+      console.log("Sticker suppressed (" + botMsgsSinceSticker + "/5 msgs since last)");
+    }
   }
   user.lastIncomingMessageId = null; // reset after use
 
