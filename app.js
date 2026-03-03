@@ -289,7 +289,8 @@ function detectAskForPhotos(text) {
 }
 
 function detectEmotionalSupport(text) {
-  return /(yes|of course|i would|sure|i['']ll be your fan|i support you)/i.test(text);
+  // Must be explicit fan/support declaration — not generic "yes" or "sure"
+  return /(i['']ll be your fan|i will be your fan|i support you|i['']m your fan|count me in as.*fan|i want to be your fan)/i.test(text);
 }
 
 function botAskedForSupport(text) {
@@ -301,11 +302,13 @@ function botAskedForSupport(text) {
 // → ppvStore.js xử lý và gọi deliverContent() + onSaleSuccess() tự động
 
 function detectCosplayQuestion(text) {
-  return /(cosplay|costume|character|anime character|who do you cosplay)/i.test(text);
+  // Only if user is asking about cosplay, not just mentioning it casually
+  return /(do you cosplay|are you a cosplayer|what do you cosplay|who do you cosplay|ur a cosplayer|you cosplay)/i.test(text);
 }
 
 function detectHobbyQuestion(text) {
-  return /(hobby|hobbies|interest|interests|what do you do|free time|like to do)/i.test(text);
+  // Only explicit questions about hobbies/interests
+  return /(what('s| is) ur hobby|what are ur hobbies|what do u do for fun|what r ur interests|ur hobbies|ur interests)/i.test(text);
 }
 
 // Detect khi user nói đã gửi tiền/tip/donate (chưa confirm)
@@ -373,12 +376,8 @@ function detectStageTransition(user, text) {
     updateStage(user, 5, "User showed emotional support");
     return { trigger: "stage_5", newStage: 5, reason: "User ready for sale" };
   }
-  if (currentStage === 1 && user.message_count >= 4) {
-    updateStage(user, 2, "Natural progression");
-    return { trigger: "natural_stage_2", newStage: 2, reason: "Message count threshold" };
-  }
-  if (currentStage === 2 && user.message_count >= 8) { updateStage(user, 3, "Natural progression"); return null; }
-  if (currentStage === 3 && user.message_count >= 12) { updateStage(user, 4, "Natural progression"); return null; }
+  // Stage transitions are now driven entirely by AI following the checkpoint guide
+  // Do NOT auto-advance based on message count — that bypasses the conversation flow
   return null;
 }
 
