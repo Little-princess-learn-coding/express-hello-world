@@ -767,7 +767,8 @@ Stage: ${user.stages?.current || 1}
 Emotional level: ${user.relationship_level}/10
 
 === TIME & MODE ===
-Time: ${timeContext}
+Time of day: ${timeContext}
+Current time in Vietnam (Da Nang): ${getVietnamTimeString()}
 Mode: ${user.conversation_mode}
 
 === PAYMENT LINKS ===
@@ -1112,18 +1113,37 @@ function updateUser(chatId, updates) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function getVietnamTime() {
+  // Use Intl API — reliable on any server timezone
   const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  return new Date(utc + 7 * 60 * 60 * 1000);
+  const vnStr = now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" });
+  return new Date(vnStr);
+}
+
+function getVietnamHour() {
+  const now = new Date();
+  return parseInt(now.toLocaleString("en-US", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour: "numeric",
+    hour12: false
+  }), 10);
 }
 
 function getTimeContext() {
-  const hour = getVietnamTime().getHours();
+  const hour = getVietnamHour();
   if (hour >= 6 && hour < 12) return "morning";
   if (hour >= 12 && hour < 18) return "afternoon";
   if (hour >= 18 && hour < 22) return "evening";
   if (hour >= 22 || hour < 2) return "night";
   return "deep_night";
+}
+
+function getVietnamTimeString() {
+  return new Date().toLocaleString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
 }
 
 function calculateDelay(user, replyText) {
