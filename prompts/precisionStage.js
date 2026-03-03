@@ -169,6 +169,19 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
   const knownFacts = Object.entries(facts).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
   if (knownFacts) parts.push(`NEVER ASK AGAIN (already know): ${knownFacts}`);
 
+  // Question throttle — max 1 question per 3 bot replies
+  const recentBotMsgs = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).slice(-3);
+  let repliesSinceLastQ = 0;
+  let foundQ = false;
+  for (let i = recentBotMsgs.length - 1; i >= 0; i--) {
+    if (recentBotMsgs[i].includes("?")) { foundQ = true; break; }
+    repliesSinceLastQ++;
+  }
+  const canAskQuestion = !foundQ || repliesSinceLastQ >= 2;
+  if (!canAskQuestion) {
+    parts.push(`QUESTION BLOCK: You asked a question in the last 2 replies. Do NOT end this reply with a question. No "?" allowed this turn — just react, comment, or share something.`);
+  }
+
   // Texting style — luôn có, ngắn gọn
   parts.push(`TEXTING RULES (NON-NEGOTIABLE):
 - Split EVERY reply into multiple SHORT lines using \n
@@ -241,6 +254,19 @@ export function buildPreciseGrokPrompt(user, strategy, selectedStrategy = null) 
   const facts = user.memoryFacts || {};
   const knownFacts = Object.entries(facts).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
   if (knownFacts) parts.push(`NEVER ASK AGAIN: ${knownFacts}`);
+
+  // Question throttle — max 1 question per 3 bot replies
+  const recentBotMsgsG = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).slice(-3);
+  let repliesSinceLastQG = 0;
+  let foundQG = false;
+  for (let i = recentBotMsgsG.length - 1; i >= 0; i--) {
+    if (recentBotMsgsG[i].includes("?")) { foundQG = true; break; }
+    repliesSinceLastQG++;
+  }
+  const canAskQuestionG = !foundQG || repliesSinceLastQG >= 2;
+  if (!canAskQuestionG) {
+    parts.push(`QUESTION BLOCK: You asked a question in the last 2 replies. Do NOT ask any question this turn. No "?" allowed — just react, comment, or share something.`);
+  }
 
   parts.push(`TEXTING RULES (NON-NEGOTIABLE):
 - Split EVERY reply into multiple SHORT lines using \n
