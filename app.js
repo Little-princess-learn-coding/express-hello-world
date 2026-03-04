@@ -1179,11 +1179,19 @@ function formatUserFacts(user) {
 }
 
 async function sendTyping(chatId) {
-  await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendChatAction`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, action: "typing" }),
-  });
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 5000);
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendChatAction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, action: "typing" }),
+      signal: controller.signal,
+    });
+    clearTimeout(tid);
+  } catch (e) {
+    // Non-critical — never crash reply flow over typing indicator
+  }
 }
 
 function splitIntoBursts(text) {
