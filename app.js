@@ -1204,6 +1204,11 @@ function splitIntoBursts(text) {
   let parts = text.split(/\n+/).map(t => t.trim()).filter(Boolean);
   // Deduplicate consecutive identical lines
   parts = parts.filter((p, i) => i === 0 || p.toLowerCase() !== parts[i-1].toLowerCase());
+  // Strip trailing period — real texting never ends with "."
+  parts = parts.map(p => p.replace(/\.+$/, '').trim());
+  // Remove any "!" that slipped through
+  parts = parts.map(p => p.replace(/!/g, '~').trim());
+  parts = parts.filter(Boolean);
   // Cap at 4 bubbles max
   if (parts.length > 4) {
     parts = [...parts.slice(0, 3), parts.slice(3).join(' ')];
