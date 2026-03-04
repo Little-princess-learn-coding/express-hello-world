@@ -126,11 +126,45 @@ export function getPreciseStageInstructions(user) {
     ? `\nIMPORTANT: You have already sent the ko-fi link. Do NOT ask "wanna see more photos" again. Move to Part B if user reacted, otherwise wait.`
     : '';
 
+  // CP1: tell bot exactly what info is still missing and what to find out next
+  let cp1Note = '';
+  if (stage === 1) {
+    const f = user.memoryFacts || {};
+    const missing = [];
+    if (!f.name) missing.push('name');
+    if (!f.age) missing.push('age');
+    if (!f.location) missing.push('where they are from');
+    if (!f.job) missing.push('job or what they study');
+
+    if (missing.length > 0) {
+      const next = missing[0]; // prioritize in order
+      cp1Note = `
+
+=== CP1 TASK — FIND OUT ABOUT USER ===
+Still missing: ${missing.join(', ')}
+Your next priority: find out their ${next} naturally in this reply or the next one.
+Do this by asking casually — not like a form, but like genuine curiosity.
+Example for name: "btw what do i call u"
+Example for age: "wait how old r u btw"
+Example for location: "where r u from btw"
+Example for job: "what do u do btw, work or study"
+IMPORTANT: Only ask about ONE thing at a time. Do NOT ask multiple in the same message.`;
+    } else {
+      cp1Note = `
+
+=== CP1 TASK — ALL BASIC INFO COLLECTED ===
+You know their name, age, location, and job. Now focus on going DEEPER:
+- Explore their world (food, culture, lifestyle, what they enjoy)
+- Find common ground, make playful observations
+- Build genuine warmth before moving to CP2`;
+    }
+  }
+
   return `=== YOUR CURRENT CHECKPOINT: ${stage} ===
 ${stageContent}
 
 ⚡ GUIDANCE FOR THIS CHECKPOINT:
-${hint}${kofiNote}
+${hint}${kofiNote}${cp1Note}
 
 CRITICAL: You are ONLY at Checkpoint ${stage}. Stay here until the transition condition above is met. Do NOT skip ahead.`;
 }
