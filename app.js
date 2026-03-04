@@ -1073,11 +1073,15 @@ function getUser(chatId, username = null) {
       fanContextCache: null,
     };
 
-    // ✅ Load/create fan profile from Supabase (async, non-blocking)
+    // ✅ Load/create fan profile from Supabase — track when done so messages wait for it
+    let resolveProfileLoaded;
+    users[chatId].profileLoaded = new Promise(r => { resolveProfileLoaded = r; });
+
     loadFanProfile(chatId).then(async profile => {
       if (!profile) {
         await createFanProfile(chatId, username);
         console.log(`🆕 New fan profile created: ${chatId}`);
+        resolveProfileLoaded();
       } else {
         // Restore persisted data
         const u = users[chatId];
@@ -1091,6 +1095,7 @@ function getUser(chatId, username = null) {
         if (profile.stage) u.stages.current = profile.stage;
         if (profile.relationship_state) u.state.relationship_state = profile.relationship_state;
         console.log(`📂 Fan profile loaded: ${chatId} (${profile.relationship_state}, stage ${profile.stage})`);
+        resolveProfileLoaded();
         // Restore recent chat history from DB so context survives server restarts
         getMessages(chatId, 20).then(msgs => {
           if (msgs && msgs.length > 0 && u.recentMessages.length === 0) {
@@ -1101,7 +1106,7 @@ function getUser(chatId, username = null) {
           }
         }).catch(() => {});
       }
-    }).catch(e => console.error("loadFanProfile error:", e));
+    }).catch(e => { console.error("loadFanProfile error:", e); resolveProfileLoaded(); });
   }
   return users[chatId];
 }
@@ -1765,6 +1770,15 @@ app.post("/webhook", async (req, res) => {
 });
 
 async function processUserMessage(chatId, text, user) {
+  // Wait for Supabase profile to finish loading before processing
+  // This prevents race condition where bot asks for info it already knows
+  if (user.profileLoaded) {
+    await Promise.race([
+      user.profileLoaded,
+      new Promise(r => setTimeout(r, 3000)) // max wait 3s
+    ]);
+  }
+
   if (userBotReplying.has(chatId) || userBotSending.has(chatId)) { enqueueMessage(chatId, text); return; }
   if (isTimeWaster(user.state) || user.conversationClosed) return;
 
