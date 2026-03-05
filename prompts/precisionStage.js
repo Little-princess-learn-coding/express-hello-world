@@ -206,7 +206,24 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
   // Known facts — NEVER ask again
   const facts = user.memoryFacts || {};
   const knownFacts = Object.entries(facts).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
-  if (knownFacts) parts.push(`NEVER ASK AGAIN (already know): ${knownFacts}`);
+  if (knownFacts) {
+    parts.push(`NEVER ASK AGAIN (already know): ${knownFacts}
+CRITICAL: The above facts were told to you by the user. Do NOT ask about them again under any circumstances.
+If u feel like asking about something already in the list → stop, pick a different topic instead.`);
+  }
+
+  // Also scan recent messages for any facts mentioned but not yet saved
+  const recentUserMsgs = (user.recentMessages || []).filter(m => !m.startsWith("Aurelia:")).slice(-5).join(" ").toLowerCase();
+  const impliedFacts = [];
+  if (!facts.job && /(engineer|developer|doctor|teacher|designer|manager|student|nurse|lawyer|accountant|architect)/i.test(recentUserMsgs)) {
+    impliedFacts.push("job (user mentioned their profession recently — do NOT ask again)");
+  }
+  if (!facts.location && /(i('m| am) from|i live in|based in)/i.test(recentUserMsgs)) {
+    impliedFacts.push("location (user mentioned where they're from recently — do NOT ask again)");
+  }
+  if (impliedFacts.length > 0) {
+    parts.push(`ALSO DO NOT ASK ABOUT: ${impliedFacts.join(", ")}`);
+  }
 
   // Topic rotation — detect if recent messages are all about same subject
   const lastMsgs = (user.recentMessages || []).slice(-6);
