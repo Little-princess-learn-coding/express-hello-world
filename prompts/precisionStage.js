@@ -56,14 +56,19 @@ Don't count messages — feel the conversation.
 Move forward when it genuinely feels like two people who enjoy talking, not just Q&A.
 
 Ready when:
-- You know their name, where they're from, age, and what they do. If they do not tell, you must ASK them these information
+- You know their name, where they're from, age, and what they do
 - You've explored something specific about their world — food, culture, a funny observation
 - There's been at least one real moment of connection — a laugh, common ground, genuine reaction
 - They're opening up naturally, not just answering
 
 If it still feels surface-level → stay and go deeper.
 CP2 is hobbies and interests — only go there when CP1 feels genuinely warm.
-PACING: MAX 1 question per reply. You can stay on current topic or change to another topic.`,
+
+PACING:
+- MAX 1 question per reply
+- After 2-3 exchanges on same topic → move to a new topic, don't linger
+- ACTIVELY ask name, age, location, job — one per opportunity, don't wait for user to volunteer
+- Topic flow example: weather/day → name → where they're from → age → job → culture/food → funny observation`,
 
   2: `WHEN TO MOVE FORWARD: Only after:
   - User has shared multiple personal things (hobbies, lifestyle, what they enjoy)
@@ -202,6 +207,16 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
   const facts = user.memoryFacts || {};
   const knownFacts = Object.entries(facts).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
   if (knownFacts) parts.push(`NEVER ASK AGAIN (already know): ${knownFacts}`);
+
+  // Topic rotation — detect if recent messages are all about same subject
+  const lastMsgs = (user.recentMessages || []).slice(-6);
+  const currentTopic = user.conversationContext?.currentTopic || null;
+  if (currentTopic && lastMsgs.length >= 4) {
+    const topicMentions = lastMsgs.filter(m => m.toLowerCase().includes(currentTopic.toLowerCase())).length;
+    if (topicMentions >= 3) {
+      parts.push(`TOPIC ROTATION: You've been talking about "${currentTopic}" for ${topicMentions}+ messages. Time to naturally shift to a new topic — bring up something else or ask about a different aspect of their life.`);
+    }
+  }
 
   // Question throttle — strict: max 1 question per 3 bot replies
   // CP1 exception: only exempt for the SINGLE missing field being asked, not general questions
