@@ -63,7 +63,7 @@ Ready when:
 
 If it still feels surface-level → stay and go deeper.
 CP2 is hobbies and interests — only go there when CP1 feels genuinely warm.
-PACING: MAX 1 question per reply. Sit with each topic before moving on.`,
+PACING: MAX 1 question per reply. You can stay on current topic or change to another topic.`,
 
   2: `WHEN TO MOVE FORWARD: Only after:
   - User has shared multiple personal things (hobbies, lifestyle, what they enjoy)
@@ -203,24 +203,26 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
   const knownFacts = Object.entries(facts).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
   if (knownFacts) parts.push(`NEVER ASK AGAIN (already know): ${knownFacts}`);
 
-  // Question throttle — max 1 question per 3 bot replies
-  // EXCEPTION: CP1 info gathering (name/age/location/job) is exempt — these are priority tasks
+  // Question throttle — strict: max 1 question per 3 bot replies
+  // CP1 exception: only exempt for the SINGLE missing field being asked, not general questions
   const stage_for_throttle = user.stages?.current || 1;
   const f_for_throttle = user.memoryFacts || {};
-  const cp1InfoMissing = stage_for_throttle === 1 && (!f_for_throttle.name || !f_for_throttle.age || !f_for_throttle.location || !f_for_throttle.job);
+  const cp1MissingFields = stage_for_throttle === 1
+    ? [!f_for_throttle.name, !f_for_throttle.age, !f_for_throttle.location, !f_for_throttle.job].filter(Boolean).length
+    : 0;
 
-  if (!cp1InfoMissing) {
-    const recentBotMsgs = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).slice(-3);
-    let repliesSinceLastQ = 0;
-    let foundQ = false;
-    for (let i = recentBotMsgs.length - 1; i >= 0; i--) {
-      if (recentBotMsgs[i].includes("?")) { foundQ = true; break; }
-      repliesSinceLastQ++;
-    }
-    const canAskQuestion = !foundQ || repliesSinceLastQ >= 2;
-    if (!canAskQuestion) {
-      parts.push(`QUESTION BLOCK: You asked a question in the last 2 replies. Do NOT end this reply with a question. No "?" allowed this turn — just react, comment, or share something.`);
-    }
+  // Count questions in last 4 bot replies
+  const recentBotMsgs = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).slice(-4);
+  let repliesSinceLastQ = 0;
+  let foundQ = false;
+  for (let i = recentBotMsgs.length - 1; i >= 0; i--) {
+    if (recentBotMsgs[i].includes("?")) { foundQ = true; break; }
+    repliesSinceLastQ++;
+  }
+  // Allow question only if: 3+ non-question replies since last question, OR CP1 field missing AND last reply had no question
+  const canAskQuestion = !foundQ || repliesSinceLastQ >= 3 || (cp1MissingFields > 0 && repliesSinceLastQ >= 1);
+  if (!canAskQuestion) {
+    parts.push(`QUESTION BLOCK (STRICT): Your last ${4 - repliesSinceLastQ} replies already contained questions. Do NOT ask ANY question this turn — no "?" at all. Just react warmly, make an observation, or share something about yourself. Let the conversation breathe.`);
   }
 
   // Texting style — luôn có, ngắn gọn
@@ -299,24 +301,23 @@ export function buildPreciseGrokPrompt(user, strategy, selectedStrategy = null) 
   const knownFacts = Object.entries(facts).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
   if (knownFacts) parts.push(`NEVER ASK AGAIN: ${knownFacts}`);
 
-  // Question throttle — max 1 question per 3 bot replies
-  // EXCEPTION: CP1 info gathering (name/age/location/job) is exempt
+  // Question throttle — strict: max 1 question per 3 bot replies
   const stage_for_throttle_g = user.stages?.current || 1;
   const f_for_throttle_g = user.memoryFacts || {};
-  const cp1InfoMissingG = stage_for_throttle_g === 1 && (!f_for_throttle_g.name || !f_for_throttle_g.age || !f_for_throttle_g.location || !f_for_throttle_g.job);
+  const cp1MissingFieldsG = stage_for_throttle_g === 1
+    ? [!f_for_throttle_g.name, !f_for_throttle_g.age, !f_for_throttle_g.location, !f_for_throttle_g.job].filter(Boolean).length
+    : 0;
 
-  if (!cp1InfoMissingG) {
-    const recentBotMsgsG = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).slice(-3);
-    let repliesSinceLastQG = 0;
-    let foundQG = false;
-    for (let i = recentBotMsgsG.length - 1; i >= 0; i--) {
-      if (recentBotMsgsG[i].includes("?")) { foundQG = true; break; }
-      repliesSinceLastQG++;
-    }
-    const canAskQuestionG = !foundQG || repliesSinceLastQG >= 2;
-    if (!canAskQuestionG) {
-      parts.push(`QUESTION BLOCK: You asked a question in the last 2 replies. Do NOT ask any question this turn. No "?" allowed — just react, comment, or share something.`);
-    }
+  const recentBotMsgsG = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).slice(-4);
+  let repliesSinceLastQG = 0;
+  let foundQG = false;
+  for (let i = recentBotMsgsG.length - 1; i >= 0; i--) {
+    if (recentBotMsgsG[i].includes("?")) { foundQG = true; break; }
+    repliesSinceLastQG++;
+  }
+  const canAskQuestionG = !foundQG || repliesSinceLastQG >= 3 || (cp1MissingFieldsG > 0 && repliesSinceLastQG >= 1);
+  if (!canAskQuestionG) {
+    parts.push(`QUESTION BLOCK (STRICT): Your recent replies already had questions. Do NOT ask ANY question this turn — no "?" at all. React, observe, or share something instead.`);
   }
 
   parts.push(`TEXTING RULES (NON-NEGOTIABLE):
