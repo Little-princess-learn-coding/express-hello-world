@@ -613,7 +613,8 @@ async function sendSticker(chatId, emotion) {
 
 // Parse [STICKER:emotion] marker from AI reply
 function parseStickerMarker(text) {
-  const match = text.match(/\[STICKER:(\w+)\]/i);
+  // Allow optional space: [STICKER:shy] or [STICKER: shy]
+  const match = text.match(/\[STICKER:\s*(\w+)\s*\]/i);
   if (!match) return { emotion: null, cleanText: text };
   return {
     emotion: match[1].toLowerCase(),
@@ -698,9 +699,16 @@ async function classifyMessageAndExtractFacts(user, userMessage, recentMessages)
 Analyze the user message and return TWO things in ONE JSON response:
 1. INTENT: intent ("flirt"|"normal"), mood ("positive"|"neutral"|"negative"), saleResponse ("yes"|"no"|"maybe"|"none"), windDown (bool)
 2. FACTS: name, age, location (city/country only), job — ONLY extract from the USER's own message.
-   CRITICAL: Do NOT extract facts from Aurelia's messages. If Aurelia says "i'm 19" that is HER age, not the user's.
-   Only extract a fact if the USER explicitly states it about THEMSELVES in the current message.
-   Example: user says "i'm 28" → extract age=28. Bot says "i'm 19" → extract nothing.
+   CRITICAL rules for fact extraction:
+   - Do NOT extract facts from Aurelia's messages
+   - "job" means their PROFESSION/OCCUPATION — not activities ("i have to work today" is NOT a job)
+   - Only extract job if user states their actual role: "i'm a teacher", "i work as engineer", "i study finance"
+   - "i have to go to work" / "going to work" = activity, NOT a job → do not extract
+   - name must be explicitly stated: "i'm David", "call me John" — not assumed
+   - age must be a number they state about themselves
+   - location = city or country they say they're from
+   Example GOOD: "im a software engineer" → job="software engineer"
+   Example BAD: "i have to go to work" → job=null (this is an activity, not a profession)
 Respond ONLY in this exact JSON (no extra text):
 {"intent":"flirt or normal","mood":"positive or neutral or negative","saleResponse":"yes or no or maybe or none","windDown":false,"facts":{}}`;
 
@@ -1819,7 +1827,13 @@ async function processUserMessage(chatId, text, user) {
   if (extractedFacts && Object.keys(extractedFacts).length > 0) {
     const newFacts = {};
     for (const key in extractedFacts) {
-      if (extractedFacts[key] && !user.memoryFacts[key]) newFacts[key] = extractedFacts[key];
+      const newVal = extractedFacts[key];
+      const oldVal = user.memoryFacts[key];
+      if (!newVal) continue;
+      // Always update if empty, or if new value is more specific (longer) than old
+      if (!oldVal || newVal.length > oldVal.length) {
+        newFacts[key] = newVal;
+      }
     }
     if (Object.keys(newFacts).length > 0) {
       Object.assign(user.memoryFacts, newFacts);
