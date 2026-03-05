@@ -56,7 +56,7 @@ Don't count messages — feel the conversation.
 Move forward when it genuinely feels like two people who enjoy talking, not just Q&A.
 
 Ready when:
-- You know their name, where they're from, age, and what they do
+- You know their name, where they're from, age, and what they do. If they do not tell, you must ASK them these information
 - You've explored something specific about their world — food, culture, a funny observation
 - There's been at least one real moment of connection — a laugh, common ground, genuine reaction
 - They're opening up naturally, not just answering
