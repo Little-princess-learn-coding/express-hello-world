@@ -1492,7 +1492,7 @@ app.post("/webhook", async (req, res) => {
         product_id: productId,
         name: kv.name || productId,
         description: kv.desc || kv.description || '',
-        theme: kv.theme || kv.tags || '',   // ← NEW: context tags for smart matching
+        theme: kv.theme || kv.tags || '',
         price: parseFloat(kv.price || '0'),
         preview_photo_id: previewFileId,
         delivery_type: 'telegram_album',
@@ -2088,7 +2088,6 @@ async function processUserMessage(chatId, text, user) {
             const product = catalog[id];
             const theme = (product.theme || product.description || '').toLowerCase();
             if (!theme) continue;
-            // Score based on keyword overlap between theme and recent conversation
             const themeWords = theme.split(/[,\s]+/).filter(w => w.length > 2);
             const score = themeWords.filter(w => recentContext.includes(w)).length;
             if (score > bestScore) { bestScore = score; bestMatch = id; }
