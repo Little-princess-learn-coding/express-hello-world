@@ -762,6 +762,23 @@ async function buildContextPrompt(user, strategy, timeContext) {
     // RAG failed silently — không block response
   }
 
+  // Build PPV section — inject available (unsent) PPV list for smart selection
+  let ppvSection = '';
+  try {
+    const catalog = await getCatalog();
+    const allIds = Object.keys(catalog || {});
+    const sentIds = user.ppv_sent || [];
+    const availableIds = allIds.filter(id => !sentIds.includes(id));
+    if (availableIds.length > 0 && (strategy === 'stage_5A' || strategy === 'user_initiated_sale')) {
+      const ppvList = availableIds.map(id => {
+        const p = catalog[id];
+        const theme = p.theme || p.description || '(no theme)';
+        return `- ${id}: ${p.name} | theme: ${theme} | $${p.price}`;
+      }).join('\n');
+      ppvSection = `\n=== AVAILABLE PPV (choose best match for conversation context) ===\n${ppvList}\nOutput [SEND:ppv_ID] with the exact product_id that fits best.`;
+    }
+  } catch(e) { /* silent */ }
+
   return `
 ${summarySection}
 === FAN PROFILE ===
@@ -795,6 +812,7 @@ ${user.recentMessages.slice(-10).join("\n")}
 ${ragSection}
 === STRATEGY ===
 ${strategy || "normal_conversation"}
+${ppvSection}
 `;
 }
 
@@ -1075,6 +1093,7 @@ function getUser(chatId, username = null) {
       start_greeting_scheduled: false,
       start_greeting_sent: false,
       stages: { current: 1, completed: [], skipped: [], stage5A_triggered: false },
+      ppv_sent: [],        // PPV product_ids already sent to this user
       lastIntentData: null,
       // RAG state
       currentKeywords: [],
@@ -1101,6 +1120,7 @@ function getUser(chatId, username = null) {
         if (profile.relationship_level) u.relationship_level = profile.relationship_level;
         if (profile.message_count) u.message_count = profile.message_count;
         if (profile.stage) u.stages.current = profile.stage;
+        if (profile.ppv_sent) u.ppv_sent = profile.ppv_sent || [];
         if (profile.relationship_state) u.state.relationship_state = profile.relationship_state;
         console.log(`📂 Fan profile loaded: ${chatId} (${profile.relationship_state}, stage ${profile.stage})`);
         resolveProfileLoaded();
@@ -1472,6 +1492,7 @@ app.post("/webhook", async (req, res) => {
         product_id: productId,
         name: kv.name || productId,
         description: kv.desc || kv.description || '',
+        theme: kv.theme || kv.tags || '',   // ← NEW: context tags for smart matching
         price: parseFloat(kv.price || '0'),
         preview_photo_id: previewFileId,
         delivery_type: 'telegram_album',
@@ -2013,19 +2034,82 @@ async function processUserMessage(chatId, text, user) {
     }
   }
 
+  // Handle specific PPV marker: bot outputs [SEND:ppv_XXXX] with exact product ID
+  const specificPPVMatch = replyText.match(/\[SEND:ppv_([\w]+)\]/);
+  if (specificPPVMatch && specificPPVMatch[1] !== 'heavy') {
+    const specificId = specificPPVMatch[1];
+    try {
+      const catalog = await getCatalog();
+      const sentIds = user.ppv_sent || [];
+      if (catalog[specificId] && !sentIds.includes(specificId)) {
+        await sleep(1500);
+        await sendAlbumPreview(chatId, specificId);
+        user.ppv_sent = [...sentIds, specificId];
+        saveFanProfile(chatId, { ppv_sent: user.ppv_sent }).catch(() => {});
+        console.log(`📸 Specific PPV sent to ${chatId}: ${specificId}`);
+        onSaleAttempt(user.state);
+      } else if (sentIds.includes(specificId)) {
+        // Already sent — pick next available
+        const availableIds = Object.keys(catalog).filter(id => !sentIds.includes(id));
+        if (availableIds.length > 0) {
+          await sleep(1500);
+          await sendAlbumPreview(chatId, availableIds[0]);
+          user.ppv_sent = [...sentIds, availableIds[0]];
+          saveFanProfile(chatId, { ppv_sent: user.ppv_sent }).catch(() => {});
+          console.log(`📸 Fallback PPV sent to ${chatId}: ${availableIds[0]} (${specificId} already sent)`);
+          onSaleAttempt(user.state);
+        }
+      }
+    } catch(e) { console.error('Specific PPV error:', e.message); }
+  }
+
   // If stage5A triggered — send PPV album preview after bot reply
   if (currentStrategy === "stage_5A" && user.stages?.stage5A_triggered) {
     try {
-      await sleep(2000); // small delay so preview feels natural
+      await sleep(2000);
       const catalog = await getCatalog();
-      const catalogIds = Object.keys(catalog || {});
-      if (catalogIds.length > 0) {
-        const albumToOffer = catalogIds[0]; // offer first album, or pick best match
-        await sendAlbumPreview(chatId, albumToOffer);
-        console.log(`📸 PPV preview sent to ${chatId}: ${albumToOffer}`);
-        user.stages.stage5A_triggered = false; // reset so it doesn't re-trigger every message
-        updateStage(user, 6, "Stage 5A completed — PPV preview sent");
-        onSaleAttempt(user.state);
+      const allIds = Object.keys(catalog || {});
+
+      if (allIds.length > 0) {
+        // Filter out PPVs already sent to this user
+        const sentIds = user.ppv_sent || [];
+        const availableIds = allIds.filter(id => !sentIds.includes(id));
+
+        if (availableIds.length === 0) {
+          console.log(`⚠️ All PPVs already sent to ${chatId} — skipping`);
+          user.stages.stage5A_triggered = false;
+        } else {
+          // Smart selection: match PPV theme to conversation context
+          const recentContext = (user.recentMessages || []).slice(-10).join(' ').toLowerCase();
+          let bestMatch = null;
+          let bestScore = -1;
+
+          for (const id of availableIds) {
+            const product = catalog[id];
+            const theme = (product.theme || product.description || '').toLowerCase();
+            if (!theme) continue;
+            // Score based on keyword overlap between theme and recent conversation
+            const themeWords = theme.split(/[,\s]+/).filter(w => w.length > 2);
+            const score = themeWords.filter(w => recentContext.includes(w)).length;
+            if (score > bestScore) { bestScore = score; bestMatch = id; }
+          }
+
+          // Fallback to first available if no theme match
+          const albumToOffer = bestMatch || availableIds[0];
+
+          await sendAlbumPreview(chatId, albumToOffer);
+          console.log(`📸 PPV preview sent to ${chatId}: ${albumToOffer} (score: ${bestScore})`);
+
+          // Track sent PPV
+          user.ppv_sent = [...sentIds, albumToOffer];
+
+          // Persist ppv_sent to Supabase
+          saveFanProfile(chatId, { ppv_sent: user.ppv_sent }).catch(() => {});
+
+          user.stages.stage5A_triggered = false;
+          updateStage(user, 6, "Stage 5A completed — PPV preview sent");
+          onSaleAttempt(user.state);
+        }
       } else {
         console.log(`⚠️ No PPV products in catalog for ${chatId}`);
       }
