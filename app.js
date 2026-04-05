@@ -15,7 +15,7 @@ import {
   getStateSummary
 } from "./state/userState.js";
 
-import STAGE_5A_PROMPT from "./prompts/stage5A.content.js";
+import PPV_SALE_PROMPT from "./prompts/ppv_sale.js";
 import FIRST_SALE_GUIDE from "./prompts/1st.saleGuide.js";
 import REPEATED_SALE_GUIDE from "./prompts/repeated_sale.js";
 import SYSTEM_PROMPT_BASE from "./prompts/systemPrompt.js";
@@ -334,7 +334,7 @@ function detectFlirtyExcessive(text) {
 
 function initializeStageTracking(user) {
   if (!user.stages) {
-    user.stages = { current: 1, completed: [], skipped: [], stage5A_triggered: false };
+    user.stages = { current: 1, completed: [], skipped: [], ppv_sale_triggered: false };
   }
 }
 
@@ -356,12 +356,12 @@ function detectStageTransition(user, text) {
   const currentStage = user.stages.current;
 
   if (detectFlirtyExcessive(text) && detectAskForPhotos(text)) {
-    user.stages.stage5A_triggered = true;
-    return { trigger: "stage_5A", newStage: "5A", reason: "User flirty + asking for photos" };
+    user.stages.ppv_sale_triggered = true;
+    return { trigger: "ppv_sale", newStage: "ppv", reason: "User flirty + asking for photos" };
   }
   if (detectAskForPhotos(text) && currentStage < 5) {
-    user.stages.stage5A_triggered = true;
-    return { trigger: "stage_5A_mild", newStage: "5A", reason: "User asking for photos" };
+    user.stages.ppv_sale_triggered = true;
+    return { trigger: "ppv_sale_mild", newStage: "ppv", reason: "User asking for photos" };
   }
   if (detectCosplayQuestion(text) && currentStage < 3) {
     updateStage(user, 3, "User asked about cosplay");
@@ -395,18 +395,8 @@ function selectRepeatStrategy(user, intentData, recentMessages) {
   if (/(another girl|other cosplayer|she is|her cosplay|that girl|other girls|another woman)/i.test(conversationText))
     return { strategy: "jealousy", confidence: 0.95, reason: "User mentioned another girl/cosplayer", canBypass: true };
 
-  if (intentData.intent === "flirt" && intentData.mood === "positive" &&
-    /(show me|see you|more pics|more photos|spicy|sexy|hot|naughty|send me|your body)/i.test(conversationText))
-    return { strategy: "exclusive", confidence: 0.9, reason: "User flirty and wants exclusive content", canBypass: true };
-
-  if (/(imagine|what if|pretend|roleplay|fantasy|let's say|let me be|you be my)/i.test(conversationText))
-    return { strategy: "roleplay", confidence: 0.85, reason: "User initiated roleplay/fantasy", canBypass: false };
-
   if (intentData.mood === "neutral" && /(how are you|you okay|feeling|take care|rest|tired|sick)/i.test(conversationText))
     return { strategy: "unwell", confidence: 0.75, reason: "User showing care/concern", canBypass: false };
-
-  if (/(your cosplay|new photos|new pics|what character|next project|album|your work)/i.test(conversationText))
-    return { strategy: "album", confidence: 0.8, reason: "User interested in cosplay work", canBypass: false };
 
   const messagesSinceLastSale = user.state.lastSaleAt
     ? user.message_count - (user.state.lastSaleMessageCount || 0)
@@ -667,7 +657,7 @@ async function callGrok(systemPrompt, contextPrompt, userMessage) {
     throw new Error('Grok auth error');
   }
   if (response.status === 429 || data.error?.type === 'insufficient_quota') {
-    sendAdminAlert('💳 xAI (Grok) hết credit!\nBot không thể reply khi user flirty hoặc stage5A.\nNạp thêm tại: console.x.ai', 'grok_quota');
+    sendAdminAlert('💳 xAI (Grok) hết credit!\nBot không thể reply khi user flirty hoặc ppv_sale.\nNạp thêm tại: console.x.ai', 'grok_quota');
     throw new Error('Grok quota exceeded');
   }
   if (!data.choices || !data.choices[0]) throw new Error(`Grok returned no choices: ${JSON.stringify(data).substring(0, 200)}`);
@@ -769,7 +759,7 @@ async function buildContextPrompt(user, strategy, timeContext) {
     const allIds = Object.keys(catalog || {});
     const sentIds = user.ppv_sent || [];
     const availableIds = allIds.filter(id => !sentIds.includes(id));
-    if (availableIds.length > 0 && (strategy === 'stage_5A' || strategy === 'user_initiated_sale')) {
+    if (availableIds.length > 0 && (strategy === 'ppv_sale' || strategy === 'user_initiated_sale')) {
       const ppvList = availableIds.map(id => {
         const p = catalog[id];
         const theme = p.theme || p.description || '(no theme)';
@@ -899,8 +889,8 @@ function buildGrokPrompt(user, strategy, selectedStrategy = null) {
   const moodGuide = buildMoodGuide(ctx.dominantMood, ctx.moodTrend);
 
   let promptContent = "";
-  if (strategy === "user_initiated_sale" || strategy === "stage_5A") {
-    promptContent = STAGE_5A_PROMPT;
+  if (strategy === "user_initiated_sale" || strategy === "ppv_sale") {
+    promptContent = PPV_SALE_PROMPT;
   } else if (strategy === "repeat_sale" && selectedStrategy) {
     promptContent = `${REPEATED_SALE_GUIDE}
 
@@ -1092,7 +1082,8 @@ function getUser(chatId, username = null) {
       has_asked_support: false,
       start_greeting_scheduled: false,
       start_greeting_sent: false,
-      stages: { current: 1, completed: [], skipped: [], stage5A_triggered: false },
+      stages: { current: 1, completed: [], skipped: [], ppv_sale_triggered: false },
+      first_sale_done: false,
       ppv_sent: [],        // PPV product_ids already sent to this user
       lastIntentData: null,
       // RAG state
@@ -1122,6 +1113,10 @@ function getUser(chatId, username = null) {
         if (profile.stage) u.stages.current = profile.stage;
         if (profile.ppv_sent) u.ppv_sent = profile.ppv_sent || [];
         if (profile.relationship_state) u.state.relationship_state = profile.relationship_state;
+        // Restore first_sale_done — nếu không còn là stranger thì 1st sale đã xong
+        if (profile.relationship_state && profile.relationship_state !== "stranger") {
+          u.first_sale_done = true;
+        }
         console.log(`📂 Fan profile loaded: ${chatId} (${profile.relationship_state}, stage ${profile.stage})`);
         resolveProfileLoaded();
         // Restore recent chat history from DB so context survives server restarts
@@ -1313,10 +1308,11 @@ function applyIntent(user, intentData) {
   }
 }
 
-function decideModel(user, intentData) {
-  if (user.stages?.stage5A_triggered) return "grok";
+function decideModel(user, intentData, strategy = null) {
+  if (strategy === "ppv_sale") return "grok";
+  if (user.stages?.ppv_sale_triggered) return "grok";
   if (intentData.intent === "flirt") return "grok";
-  return "openai";
+  return "openai"; // first_sale, casual_chat, repeat_sale → Claude
 }
 
 /* ================== WEBHOOK ================== */
@@ -1881,17 +1877,15 @@ async function processUserMessage(chatId, text, user) {
 
   applyIntent(user, intentData);
 
-  // Detect stage transitions (including stage5A)
+  // Detect stage transitions (including ppv_sale)
   const stageTransition = detectStageTransition(user, text);
   if (stageTransition) {
     console.log(`📍 Stage transition: ${stageTransition.trigger} — ${stageTransition.reason}`);
-    // If stage5A triggered by user asking for photos, override strategy
-    if (stageTransition.trigger === "stage_5A" || stageTransition.trigger === "stage_5A_mild") {
-      // Will be handled in strategy selection below via stage5A_triggered flag
+    // If ppv_sale triggered by user asking for photos, override strategy
+    if (stageTransition.trigger === "ppv_sale" || stageTransition.trigger === "ppv_sale_mild") {
+      // Will be handled in strategy selection below via ppv_sale_triggered flag
     }
   }
-
-  const modelChoice = decideModel(user, intentData);
 
   // Log current stage every message
   console.log(`📊 [${chatId}] Stage: ${user.stages?.current || 1} | Mood: ${intentData.mood} | Msgs: ${user.message_count} | Weekly sales: ${user.state.weeklySaleAttempts || 0}/3`);
@@ -1928,34 +1922,42 @@ async function processUserMessage(chatId, text, user) {
   const canAttemptSale = timingCheck.allow && (contextCheck.suitable || timingCheck.force);
   const isForced = timingCheck.force && intentData.mood !== "negative";
 
-  if (canAttemptSale) {
-    const hasPurchased = (user.state.successfulSales || 0) > 0;
+  // ── MODE ROUTING ──
+  // stranger  → 1st_sale (stage 1-6, chỉ 1 lần duy nhất)
+  // casual / supporter → casual_chat (default), repeat_sale hoặc ppv_sale khi timing pass
 
-    if (user.stages?.stage5A_triggered) {
-      currentStrategy = "stage_5A";
-    } else if (intentData.saleResponse === "yes" || detectAskForPhotos(text)) {
-      currentStrategy = "user_initiated_sale";
-    } else if (isForced || (!hasPurchased && user.message_count >= 5)) {
-      // Force or first time: use first_sale if no purchase, repeat_sale if has purchased
-      if (hasPurchased) {
-        selectedStrategyObj = selectRepeatStrategy(user, intentData, user.recentMessages);
-        currentStrategy = "repeat_sale";
-      } else {
-        currentStrategy = "first_sale";
-      }
-    } else if (hasPurchased) {
-      selectedStrategyObj = selectRepeatStrategy(user, intentData, user.recentMessages);
-      currentStrategy = "repeat_sale";
-    }
-
-    if (currentStrategy) {
-      const label = isForced ? "🔴 FORCED" : "🎯";
-      console.log(`${label} Strategy: ${currentStrategy} | ${timingCheck.reason}`);
-      onSaleAttempt(user.state);
-    }
+  if (isStranger(user.state) && !user.first_sale_done) {
+    // User mới — luôn 1st_sale, chỉ 1 lần duy nhất
+    currentStrategy = "first_sale";
+    console.log(`🌱 1st sale — stranger user`);
   } else {
-    console.log(`⏭️ No sale: ${timingCheck.allow ? contextCheck.reason : timingCheck.reason}`);
+    // ppv_sale ưu tiên cao nhất — user flirty hoặc ask for photos
+    if (user.stages?.ppv_sale_triggered || detectAskForPhotos(text)) {
+      currentStrategy = "ppv_sale";
+      console.log(`🔥 PPV sale triggered`);
+    } else if (canAttemptSale) {
+      // Timing check pass → repeat_sale
+      selectedStrategyObj = selectRepeatStrategy(user, intentData, user.recentMessages);
+      if (selectedStrategyObj?.strategy) {
+        currentStrategy = "repeat_sale";
+        const label = isForced ? "🔴 FORCED" : "🎯";
+        console.log(`${label} Repeat sale: ${selectedStrategyObj.strategy} | ${timingCheck.reason}`);
+      } else {
+        currentStrategy = "casual_chat";
+        console.log(`💬 Casual chat (strategy blocked: ${selectedStrategyObj?.reason})`);
+      }
+    } else {
+      // Timing check failed → casual_chat (default mode)
+      currentStrategy = "casual_chat";
+      console.log(`💬 Casual chat | ${timingCheck.allow ? contextCheck.reason : timingCheck.reason}`);
+    }
   }
+
+  if (currentStrategy && currentStrategy !== "casual_chat") {
+    onSaleAttempt(user.state);
+  }
+
+  const modelChoice = decideModel(user, intentData, currentStrategy);
 
   userBotReplying.add(chatId);
   let replyText;
@@ -2063,8 +2065,8 @@ async function processUserMessage(chatId, text, user) {
     } catch(e) { console.error('Specific PPV error:', e.message); }
   }
 
-  // If stage5A triggered — send PPV album preview after bot reply
-  if (currentStrategy === "stage_5A" && user.stages?.stage5A_triggered) {
+  // If ppv_sale triggered — send PPV album preview after bot reply
+  if (currentStrategy === "ppv_sale" && user.stages?.ppv_sale_triggered) {
     try {
       await sleep(2000);
       const catalog = await getCatalog();
@@ -2077,7 +2079,7 @@ async function processUserMessage(chatId, text, user) {
 
         if (availableIds.length === 0) {
           console.log(`⚠️ All PPVs already sent to ${chatId} — skipping`);
-          user.stages.stage5A_triggered = false;
+          user.stages.ppv_sale_triggered = false;
         } else {
           // Smart selection: match PPV theme to conversation context
           const recentContext = (user.recentMessages || []).slice(-10).join(' ').toLowerCase();
@@ -2105,8 +2107,8 @@ async function processUserMessage(chatId, text, user) {
           // Persist ppv_sent to Supabase
           saveFanProfile(chatId, { ppv_sent: user.ppv_sent }).catch(() => {});
 
-          user.stages.stage5A_triggered = false;
-          updateStage(user, 6, "Stage 5A completed — PPV preview sent");
+          user.stages.ppv_sale_triggered = false;
+          updateStage(user, 6, "PPV sale completed — PPV preview sent");
           onSaleAttempt(user.state);
         }
       } else {
@@ -2123,6 +2125,12 @@ async function processUserMessage(chatId, text, user) {
 
   user.recentMessages.push(`Aurelia: ${cleanReplyText}`);
   if (user.recentMessages.length > 12) user.recentMessages.shift();
+
+  // Mark first_sale_done when stage 6 is reached — prevent re-triggering 1st sale
+  if (currentStrategy === "first_sale" && user.stages?.current >= 6 && !user.first_sale_done) {
+    user.first_sale_done = true;
+    console.log(`✅ 1st sale completed for ${chatId} — locked`);
+  }
 
   // Track if kofi link has been sent — prevent bot asking "wanna see photos?" again
   if (/ko-fi\.com|ko-fi link/i.test(cleanReplyText)) {
