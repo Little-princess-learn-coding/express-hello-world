@@ -98,8 +98,57 @@ export const CATALOG = new Proxy({}, {
 // ============================================================
 // 🛒 CART & ORDER STATE
 // ============================================================
-const carts = new Map();         // chatId → productId (1 item cart)
-const pendingOrders = new Map(); // orderId → { chatId, productId, amount, method }
+const carts = new Map(); // chatId → productId (1 item cart)
+
+// ── pendingOrders: RAM + Supabase backup ──
+// RAM cho fast lookup, Supabase để survive server restart
+const pendingOrders = new Map();
+
+async function savePendingOrder(orderId, data) {
+  pendingOrders.set(orderId, data);
+  try {
+    const supabase = getSupabase();
+    await supabase.from("pending_orders").upsert({
+      order_id: orderId,
+      chat_id: data.chatId,
+      product_id: data.productId,
+      amount: data.amount,
+      method: data.method,
+      created_at: new Date().toISOString(),
+    }, { onConflict: "order_id" });
+  } catch (e) {
+    console.error("savePendingOrder error:", e.message);
+  }
+}
+
+async function getPendingOrder(orderId) {
+  // Check RAM first
+  if (pendingOrders.has(orderId)) return pendingOrders.get(orderId);
+  // Fallback to Supabase (after server restart)
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase.from("pending_orders")
+      .select("*").eq("order_id", orderId).single();
+    if (data) {
+      const order = { chatId: data.chat_id, productId: data.product_id, amount: data.amount, method: data.method };
+      pendingOrders.set(orderId, order); // restore to RAM
+      return order;
+    }
+  } catch (e) {
+    console.error("getPendingOrder error:", e.message);
+  }
+  return null;
+}
+
+async function deletePendingOrder(orderId) {
+  pendingOrders.delete(orderId);
+  try {
+    const supabase = getSupabase();
+    await supabase.from("pending_orders").delete().eq("order_id", orderId);
+  } catch (e) {
+    console.error("deletePendingOrder error:", e.message);
+  }
+}
 
 // ============================================================
 // 📨 TELEGRAM API HELPERS
@@ -268,7 +317,7 @@ async function handlePayPalPayment(chatId, productId, callbackQueryId) {
     if (!order.id) throw new Error("PayPal order failed: " + JSON.stringify(order));
 
     // Save pending order
-    pendingOrders.set(order.id, { chatId, productId, amount: product.price, method: "paypal", createdAt: Date.now() });
+    await savePendingOrder(order.id, { chatId, productId, amount: product.price, method: "paypal", createdAt: Date.now() });
 
     const approvalUrl = order.links.find(l => l.rel === "payer-action")?.href;
 
@@ -346,7 +395,7 @@ async function handleCryptoCoin(chatId, productId, coin, callbackQueryId) {
     const payment = await res.json();
     if (!payment.payment_id) throw new Error("NOWPayments failed: " + JSON.stringify(payment));
 
-    pendingOrders.set(payment.payment_id.toString(), {
+    await savePendingOrder(payment.payment_id.toString(), {
       chatId, productId, amount: product.price, method: "crypto", coin, createdAt: Date.now()
     });
 
@@ -398,43 +447,24 @@ export async function deliverContent(chatId, productId, method, paymentRef, user
   }
 
   try {
-    // 1. Cảm ơn
-    const thankYous = ["omg thank u so much!! 🥺💕", "payment confirmed~", "sending ur files now babe!"];
-    for (const msg of thankYous) {
-      await tg("sendMessage", { chat_id: chatId, text: msg });
-      await sleep(1000 + Math.random() * 800);
-    }
-
-    // 2. Gửi album bằng photoIds từ Supabase
+    // Gửi album — batch 10 ảnh/lần
     const photoIds = product.photoIds || [];
     if (photoIds.length === 0) {
       console.error(`No photos for product: ${productId}`);
-      await tg("sendMessage", { chat_id: chatId, text: "i'll send it manually in a sec! 🌸" });
       return;
     }
 
-    // Telegram sendMediaGroup — tối đa 10 ảnh/lần
     const BATCH = 10;
     for (let i = 0; i < photoIds.length; i += BATCH) {
       const batch = photoIds.slice(i, i + BATCH);
-      const media = batch.map((fileId, idx) => ({
-        type: "photo",
-        media: fileId,
-        ...(i === 0 && idx === 0 ? { caption: `✨ ${product.name}\n\nEnjoy~ 💕` } : {}),
-      }));
+      const media = batch.map(fileId => ({ type: "photo", media: fileId }));
       await tg("sendMediaGroup", { chat_id: chatId, media });
       if (i + BATCH < photoIds.length) await sleep(1500);
     }
 
-    // 3. Follow-up
-    await sleep(2000);
-    const followUps = ["hope u love it 🥰", "lmk what u think ok~ 💕", "enjoy babe~ 🌸"];
-    await tg("sendMessage", { chat_id: chatId, text: followUps[Math.floor(Math.random() * followUps.length)] });
-
     console.log(`✅ Delivered ${product.name} to ${chatId}`);
   } catch (err) {
     console.error(`❌ Delivery failed for ${chatId}:`, err);
-    await tg("sendMessage", { chat_id: chatId, text: "something went wrong, i'll send manually! 😢" });
   }
 }
 
@@ -455,10 +485,10 @@ export async function handlePayPalWebhook(req, users = null) {
 
   if (event_type === "PAYMENT.CAPTURE.COMPLETED") {
     const orderId = resource?.supplementary_data?.related_ids?.order_id || resource?.id;
-    const order = pendingOrders.get(orderId);
+    const order = await getPendingOrder(orderId);
     if (order && resource?.status === "COMPLETED") {
       await deliverContent(order.chatId, order.productId, "paypal", orderId, users);
-      pendingOrders.delete(orderId);
+      await deletePendingOrder(orderId);
     }
     return true;
   }
@@ -492,10 +522,10 @@ export async function handleCryptoWebhook(req, users = null) {
   console.log(`📨 Crypto webhook: ${payment_id} → ${payment_status}`);
 
   if (payment_status === "finished" || payment_status === "confirmed") {
-    const order = pendingOrders.get(payment_id.toString());
+    const order = await getPendingOrder(payment_id.toString());
     if (order) {
       await deliverContent(order.chatId, order.productId, "crypto", payment_id, users);
-      pendingOrders.delete(payment_id.toString());
+      await deletePendingOrder(payment_id.toString());
     }
     return true;
   }
