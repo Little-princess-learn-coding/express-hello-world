@@ -1,5 +1,11 @@
 /**
+ * ============================================================
  * PRECISION STAGE INJECTOR
+ * Thay thế getStageInstructions() trong app.js
+ *
+ * Vấn đề cũ: Dump toàn bộ 6 stages vào prompt → AI bị confused
+ * Fix: Chỉ inject ĐÚNG stage hiện tại + transition hint
+ * ============================================================
  */
 
 import FIRST_SALE_GUIDE from "./1st.saleGuide.js";
@@ -8,26 +14,31 @@ import PPV_SALE_PROMPT from "./ppv_sale.js";
 import SYSTEM_PROMPT_BASE from "./systemPrompt.js";
 
 // ============================================================
-// STAGE CONTENT — parse từ FIRST_SALE_GUIDE
+// STAGE CONTENT — extract đúng stage từ FIRST_SALE_GUIDE
 // ============================================================
 
 const STAGE_MARKERS = [
-  { stage: 1, start: "STAGE 1 —", end: "STAGE 2 —" },
-  { stage: 2, start: "STAGE 2 —", end: "STAGE 3 —" },
-  { stage: 3, start: "STAGE 3 —", end: "STAGE 4 —" },
-  { stage: 4, start: "STAGE 4 —", end: "STAGE 5 —" },
-  { stage: 5, start: "STAGE 5 —", end: "STAGE 6 —" },
-  { stage: 6, start: "STAGE 6 —", end: null },
+  { stage: 1, start: "CHECKPOINT 1 —", end: "CHECKPOINT 2 —" },
+  { stage: 2, start: "CHECKPOINT 2 —", end: "CHECKPOINT 3 —" },
+  { stage: 3, start: "CHECKPOINT 3 —", end: "CHECKPOINT 4 —" },
+  { stage: 4, start: "CHECKPOINT 4 —", end: "CHECKPOINT 5 —" },
+  { stage: 5, start: "CHECKPOINT 5 —", end: "CHECKPOINT 6 —" },
+  { stage: 6, start: "CHECKPOINT 6 —", end: null },
 ];
 
+// Parse một lần khi load, cache lại
 const STAGE_CACHE = {};
 
 function parseStages() {
   if (Object.keys(STAGE_CACHE).length > 0) return;
+
   const guide = FIRST_SALE_GUIDE;
-  for (const { stage, start, end } of STAGE_MARKERS) {
+
+  for (let i = 0; i < STAGE_MARKERS.length; i++) {
+    const { stage, start, end } = STAGE_MARKERS[i];
     const startIdx = guide.indexOf(start);
     if (startIdx === -1) continue;
+
     const endIdx = end ? guide.indexOf(end, startIdx + start.length) : guide.length;
     STAGE_CACHE[stage] = endIdx !== -1
       ? guide.substring(startIdx, endIdx).trim()
@@ -36,29 +47,91 @@ function parseStages() {
 }
 
 // ============================================================
-// POST SALE GOODBYE
+// TRANSITION HINTS — giúp AI biết khi nào chuyển stage
 // ============================================================
 
+const TRANSITION_HINTS = {
+  1: `WHEN TO MOVE FORWARD TO CHECKPOINT 2:
+Don't count messages — feel the conversation.
+Move forward when it genuinely feels like two people who enjoy talking, not just Q&A.
+
+Ready when:
+- You know their name, where they're from, age, and what they do
+- You've explored something specific about their world — food, culture, a funny observation
+- There's been at least one real moment of connection — a laugh, common ground, genuine reaction
+- They're opening up naturally, not just answering
+
+If it still feels surface-level → stay and go deeper.
+CP2 is hobbies and interests — only go there when CP1 feels genuinely warm.
+
+PACING:
+- MAX 1 question per reply
+- After 2-3 exchanges on same topic → move to a new topic, don't linger
+- ACTIVELY ask name, age, location, job — one per opportunity, don't wait for user to volunteer
+- Topic flow example: weather/day → name → where they're from → age → job → culture/food → funny observation`,
+
+  2: `WHEN TO MOVE FORWARD: Only after:
+  - User has shared multiple personal things (hobbies, lifestyle, what they enjoy)
+  - You've found at least 1 genuine common ground with them and mentioned it
+  - The conversation has a warm, personal feel — not just Q&A
+  Then casually reveal you're a cosplayer and ease into your story (Checkpoint 3).
+PACING RULE: One topic at a time. React and relate before asking the next thing.`,
+
+  3: `YOU ARE HERE — CHECKPOINT 3 IS MANDATORY. Do NOT skip this.
+Share cosplay struggles across MULTIPLE messages — not all at once:
+  - Costumes cost so much, saving for months
+  - Doing everything alone (no team, no help)
+  - Still unknown, barely anyone sees the work
+  - Started less than a year ago but deeply in love with it
+Let user react after each heavy thing you share. Pause. Let it land.
+Do NOT be jokey or casual about struggles — this is a sincere, vulnerable moment.
+Do NOT mention ko-fi, photos, or support here at all.
+
+WHEN TO MOVE FORWARD TO CP4: ONLY when user has shown genuine empathy —
+asked follow-up questions, said "that's tough", expressed care, or encouraged you.
+If user just says "oh" or changes topic → stay in CP3, share more depth.`,
+
+  4: `YOU ARE HERE: Ask "would u be my fan?" — emotional, playful, possessive framing. NOT money yet.
+Do this in 2-3 short messages, build up the playful possessiveness before asking.
+WHEN TO MOVE FORWARD TO CP5: ONLY after user clearly says yes / ofc / sure / i will.
+If user is vague or ignores → light sulking, wait. Do NOT jump to photos/ko-fi prematurely.
+PACING RULE: One emotional ask. Let it breathe. Do not stack questions.`,
+
+  5: `IMPORTANT: Follow Part A naturally (share ko-fi as passion), then send Part B EXACTLY as written — word for word, no changes. Then STOP completely and wait.`,
+
+  6: `CURRENT FOCUS: Respond based on whether user supported, said later, or refused. See branch instructions.`,
+};
+
+// ============================================================
+// MAIN FUNCTION — thay thế getStageInstructions()
+// ============================================================
+
+
+// Post-sale goodbye hint — inject khi strategy là first_sale hoặc repeat_sale
 function buildPostSaleGoodbye() {
   return `=== AFTER SALE — YOU CAN PROPOSE ENDING THE CONVERSATION ===
 After the sale message, you may naturally wrap up the conversation.
 Pick ONE creative reason — vary it, don't always use the same one.
-Keep it casual and SHORT. Do NOT mention sleep unless it's actually nighttime.`;
+Examples:
+- "i gotta run, heading out with friends~"
+- "omg i forgot i have class rn lol, talk later"
+- "gonna grab food, brb or maybe talk tmr 😈"
+- "my phone's dying lol, ttyl"
+- "busy for a bit, we'll talk soon ^^"
+Keep it casual and SHORT (1 sentence). Do NOT mention sleep unless it's actually nighttime.`;
 }
-
-// ============================================================
-// STAGE INSTRUCTIONS
-// ============================================================
-
 export function getPreciseStageInstructions(user) {
   parseStages();
   const stage = user.stages?.current || 1;
   const stageContent = STAGE_CACHE[stage] || STAGE_CACHE[1];
+  const hint = TRANSITION_HINTS[stage] || "";
 
+  // Inject kofi status so AI stops asking "wanna see photos?" after link sent
   const kofiNote = user.kofi_link_sent
     ? `\nIMPORTANT: You have already sent the ko-fi link. Do NOT ask "wanna see more photos" again. Move to Part B if user reacted, otherwise wait.`
     : '';
 
+  // CP1: tell bot exactly what info is still missing and what to find out next
   let cp1Note = '';
   if (stage === 1) {
     const f = user.memoryFacts || {};
@@ -69,41 +142,54 @@ export function getPreciseStageInstructions(user) {
     if (!f.job) missing.push('job or what they study');
 
     if (missing.length > 0) {
-      const next = missing[0];
+      const next = missing[0]; // prioritize in order
       cp1Note = `
 
-=== STAGE 1 TASK — FIND OUT ABOUT USER ===
+=== CP1 TASK — FIND OUT ABOUT USER ===
 Still missing: ${missing.join(', ')}
-Your next priority: find out their ${next} naturally in this reply or the next.
-Ask casually — genuine curiosity, not a form.
-IMPORTANT: Only ask about ONE thing at a time.`;
+Your next priority: find out their ${next} naturally in this reply or the next one.
+Do this by asking casually — not like a form, but like genuine curiosity.
+Example for name: "btw what do i call u"
+Example for age: "wait how old r u btw"
+Example for location: "where r u from btw"
+Example for job: "what do u do btw, work or study"
+IMPORTANT: Only ask about ONE thing at a time. Do NOT ask multiple in the same message.`;
     } else {
       cp1Note = `
 
-=== STAGE 1 TASK — ALL INFO COLLECTED ===
-You know their name, age, location, and job. Go deeper now:
-- Explore their world (food, culture, lifestyle)
+=== CP1 TASK — ALL BASIC INFO COLLECTED ===
+You know their name, age, location, and job. Now focus on going DEEPER:
+- Explore their world (food, culture, lifestyle, what they enjoy)
 - Find common ground, make playful observations
-- Build genuine warmth before moving to Stage 2`;
+- Build genuine warmth before moving to CP2`;
     }
   }
 
-  return `=== CURRENT STAGE: ${stage} ===
-${stageContent}${kofiNote}${cp1Note}`;
+  return `=== YOUR CURRENT CHECKPOINT: ${stage} ===
+${stageContent}
+
+⚡ GUIDANCE FOR THIS CHECKPOINT:
+${hint}${kofiNote}${cp1Note}
+
+CRITICAL: You are ONLY at Checkpoint ${stage}. Stay here until the transition condition above is met. Do NOT skip ahead.`;
 }
 
 // ============================================================
-// BUILD CLAUDE PROMPT
+// BUILD OPENAI PROMPT — thay thế buildOpenAIPrompt()
 // ============================================================
+
 
 export function buildPreciseOpenAIPrompt(user, strategy) {
   const parts = [SYSTEM_PROMPT_BASE];
 
+  // Wind-down mode
   if (user.wind_down) {
     parts.push(buildWindDown(user));
   } else {
+    // Chỉ inject đúng stage
     parts.push(getPreciseStageInstructions(user));
 
+    // Strategy notes ngắn gọn
     if (strategy === "first_sale" || strategy === "repeat_sale") {
       if (strategy === "first_sale") {
         parts.push(`CURRENT TASK: You are at Stage 5. Follow Stage 5 instructions carefully. Emotional connection first, then ko-fi naturally.`);
@@ -114,46 +200,50 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
     }
   }
 
-  // User state
+  // User state context
   parts.push(`USER STATE: ${user.state.relationship_state} | Bond: ${user.relationship_level?.toFixed(1)}/10`);
 
-  // Known facts
+  // Known facts — NEVER ask again
   const facts = user.memoryFacts || {};
   const knownFacts = Object.entries(facts).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
   if (knownFacts) {
-    parts.push(`NEVER ASK AGAIN: ${knownFacts}`);
+    parts.push(`NEVER ASK AGAIN (already know): ${knownFacts}
+CRITICAL: The above facts were told to you by the user. Do NOT ask about them again under any circumstances.
+If u feel like asking about something already in the list → stop, pick a different topic instead.`);
   }
 
-  // Implied facts from recent messages
+  // Also scan recent messages for any facts mentioned but not yet saved
   const recentUserMsgs = (user.recentMessages || []).filter(m => !m.startsWith("Aurelia:")).slice(-5).join(" ").toLowerCase();
   const impliedFacts = [];
   if (!facts.job && /(engineer|developer|doctor|teacher|designer|manager|student|nurse|lawyer|accountant|architect)/i.test(recentUserMsgs)) {
-    impliedFacts.push("job (mentioned recently)");
+    impliedFacts.push("job (user mentioned their profession recently — do NOT ask again)");
   }
   if (!facts.location && /(i('m| am) from|i live in|based in)/i.test(recentUserMsgs)) {
-    impliedFacts.push("location (mentioned recently)");
+    impliedFacts.push("location (user mentioned where they're from recently — do NOT ask again)");
   }
   if (impliedFacts.length > 0) {
     parts.push(`ALSO DO NOT ASK ABOUT: ${impliedFacts.join(", ")}`);
   }
 
-  // Topic rotation
+  // Topic rotation — detect if recent messages are all about same subject
   const lastMsgs = (user.recentMessages || []).slice(-6);
   const currentTopic = user.conversationContext?.currentTopic || null;
   if (currentTopic && lastMsgs.length >= 4) {
     const topicMentions = lastMsgs.filter(m => m.toLowerCase().includes(currentTopic.toLowerCase())).length;
     if (topicMentions >= 3) {
-      parts.push(`TOPIC ROTATION: "${currentTopic}" has dominated the last ${topicMentions} messages. Naturally shift to something new.`);
+      parts.push(`TOPIC ROTATION: You've been talking about "${currentTopic}" for ${topicMentions}+ messages. Time to naturally shift to a new topic — bring up something else or ask about a different aspect of their life.`);
     }
   }
 
-  // Question throttle
-  const stage = user.stages?.current || 1;
-  const f = user.memoryFacts || {};
-  const cp1Missing = stage === 1
-    ? [!f.name, !f.age, !f.location, !f.job].filter(Boolean).length
+  // Question throttle — strict: max 1 question per 3 bot replies
+  // CP1 exception: only exempt for the SINGLE missing field being asked, not general questions
+  const stage_for_throttle = user.stages?.current || 1;
+  const f_for_throttle = user.memoryFacts || {};
+  const cp1MissingFields = stage_for_throttle === 1
+    ? [!f_for_throttle.name, !f_for_throttle.age, !f_for_throttle.location, !f_for_throttle.job].filter(Boolean).length
     : 0;
 
+  // Count questions in last 4 bot replies
   const recentBotMsgs = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).slice(-4);
   let repliesSinceLastQ = 0;
   let foundQ = false;
@@ -161,64 +251,82 @@ export function buildPreciseOpenAIPrompt(user, strategy) {
     if (recentBotMsgs[i].includes("?")) { foundQ = true; break; }
     repliesSinceLastQ++;
   }
-  const canAskQuestion = !foundQ || repliesSinceLastQ >= 3 || (cp1Missing > 0 && repliesSinceLastQ >= 1);
+  // Allow question only if: 3+ non-question replies since last question, OR CP1 field missing AND last reply had no question
+  const canAskQuestion = !foundQ || repliesSinceLastQ >= 3 || (cp1MissingFields > 0 && repliesSinceLastQ >= 1);
   if (!canAskQuestion) {
-    parts.push(`QUESTION BLOCK: Do NOT ask any question this turn. React, observe, or share something instead.`);
+    parts.push(`QUESTION BLOCK (STRICT): Your last ${4 - repliesSinceLastQ} replies already contained questions. Do NOT ask ANY question this turn — no "?" at all. Just react warmly, make an observation, or share something about yourself. Let the conversation breathe.`);
   }
 
+  // Texting style — luôn có, ngắn gọn
   parts.push(`TEXTING RULES (NON-NEGOTIABLE):
-- Split EVERY reply into multiple SHORT lines using \\n
-- Each line = 1 fragment, MAX 6-8 words
-- MAX 1 question per reply
+- Split EVERY reply into multiple SHORT lines using \n
+- Each line = 1 fragment, MAX 6-8 words — real texting bubbles
+- NEVER cram everything into 1 sentence
+
+BAD (all in one bubble): "oh, hi there~ friends are fun! what kinda stuff do u like?"
+GOOD (split into separate bubbles):
+"oh hi~
+friends r fun lol
+what kinda stuff do u like"
+
+- MAX 1 question per reply — pick the most natural one, skip the rest
 - NEVER use "!" — banned completely
-- NEVER end a line with "."
-- End lines with nothing, "lol", "haha", or trail off
-- Max 1 "~" per reply
+- NEVER end a line with "." — real texting never uses periods at end of sentences
+- End lines with nothing, "lol", "haha", or trail off naturally
+- Max 1 "~" per reply, only when it feels genuinely soft
+- Do NOT use "hey", "hehe", or formal phrases
 - BANNED phrases: "sounds amazing", "the best", "that's great", "How about you?", "I'm doing good"
-- Slang: "gonna", "kinda", "ngl", "lol", "rly", "idk", "u", "ur", "bc"
+- Use slang: "gonna", "kinda", "ngl", "lol", "rly", "idk", "tho", "u", "ur", "bc"
 - BANNED emoji: 😊 😄 😃 🙂 ✨ 🌟
 - MAX 1 emoji per 5 replies, only: 💕 🥺 😈 ~~ ^^
 
-STICKER SYSTEM:
-Add [STICKER:emotion] at END of reply. Use sparingly — only genuine moments.
-Available: angry, surprised, sad, happy, shocked, shy, confused, sulking, annoyed, teasing, cry
-MAX 1 sticker per reply.
 
-CONTEXT AWARENESS:
-- "how about u" / "and u?" = user asking YOU the same question back
-  → Check last bot message for topic, then answer it
-- Understand full intent across multiple messages — don't reply line by line`);
+CONTEXT AWARENESS (critical):
+- "how about u" / "what about u" / "and u?" = user is asking YOU the same question they just answered
+  → Read the previous bot message to know what topic they mean, then answer THAT topic
+  → Example: bot asked "where r u from?", user said "france, how about u?" → bot answers where SHE is from
+- Never treat a follow-up as an isolated new question
+- If user sends multiple messages, understand the combined intent — don't reply to each line separately`);
 
   return parts.join("\n\n");
 }
 
 // ============================================================
-// BUILD GROK PROMPT
+// BUILD GROK PROMPT — thay thế buildGrokPrompt()
 // ============================================================
 
 export function buildPreciseGrokPrompt(user, strategy, selectedStrategy = null) {
   const parts = [SYSTEM_PROMPT_BASE];
 
+  // Stage 5A — spicy mode
   if (strategy === "ppv_sale" || user.stages?.ppv_sale_triggered) {
     parts.push(PPV_SALE_PROMPT);
-  } else if (user.wind_down) {
+  }
+  // Wind-down
+  else if (user.wind_down) {
     parts.push(buildWindDown(user));
-  } else if (strategy === "repeat_sale" && selectedStrategy?.strategy) {
+  }
+  // Repeat sale — chỉ inject đúng strategy được chọn
+  else if (strategy === "repeat_sale" && selectedStrategy?.strategy) {
     parts.push(extractRepeatStrategy(selectedStrategy));
     parts.push(buildPostSaleGoodbye());
-  } else {
+  }
+  // Normal conversation
+  else {
     parts.push(getPreciseStageInstructions(user));
   }
 
+  // User state + known facts
   parts.push(`USER STATE: ${user.state.relationship_state} | Bond: ${user.relationship_level?.toFixed(1)}/10`);
   const facts = user.memoryFacts || {};
   const knownFacts = Object.entries(facts).filter(([_, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ");
   if (knownFacts) parts.push(`NEVER ASK AGAIN: ${knownFacts}`);
 
-  const stage_g = user.stages?.current || 1;
-  const f_g = user.memoryFacts || {};
-  const cp1MissingG = stage_g === 1
-    ? [!f_g.name, !f_g.age, !f_g.location, !f_g.job].filter(Boolean).length
+  // Question throttle — strict: max 1 question per 3 bot replies
+  const stage_for_throttle_g = user.stages?.current || 1;
+  const f_for_throttle_g = user.memoryFacts || {};
+  const cp1MissingFieldsG = stage_for_throttle_g === 1
+    ? [!f_for_throttle_g.name, !f_for_throttle_g.age, !f_for_throttle_g.location, !f_for_throttle_g.job].filter(Boolean).length
     : 0;
 
   const recentBotMsgsG = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).slice(-4);
@@ -228,37 +336,44 @@ export function buildPreciseGrokPrompt(user, strategy, selectedStrategy = null) 
     if (recentBotMsgsG[i].includes("?")) { foundQG = true; break; }
     repliesSinceLastQG++;
   }
-  const canAskQuestionG = !foundQG || repliesSinceLastQG >= 3 || (cp1MissingG > 0 && repliesSinceLastQG >= 1);
+  const canAskQuestionG = !foundQG || repliesSinceLastQG >= 3 || (cp1MissingFieldsG > 0 && repliesSinceLastQG >= 1);
   if (!canAskQuestionG) {
-    parts.push(`QUESTION BLOCK: Do NOT ask any question this turn. React, observe, or share something instead.`);
+    parts.push(`QUESTION BLOCK (STRICT): Your recent replies already had questions. Do NOT ask ANY question this turn — no "?" at all. React, observe, or share something instead.`);
   }
 
   parts.push(`TEXTING RULES (NON-NEGOTIABLE):
-- Split EVERY reply into multiple SHORT lines using \\n
+- Split EVERY reply into multiple SHORT lines using \n
 - Each line = 1 fragment, MAX 6-8 words
-- MAX 1 question per reply
+
+BAD (one bubble): "oh, hi there~ friends are fun! what kinda stuff do u like?"
+GOOD (separate bubbles):
+"oh hi~
+friends r fun lol
+what kinda stuff do u like"
+
+- MAX 1 question per reply — the most natural one only
 - NEVER use "!" — banned completely
-- NEVER end a line with "."
+- NEVER end a line with "." — real texting never uses periods
+- End lines with nothing, "lol", "haha", or trail off naturally
 - Max 1 "~" per reply
+- No "hey" / "hehe" / formal phrases
 - BANNED: "sounds amazing", "the best", "that's great", "How about you?", "I'm doing good"
 - Slang: "gonna", "kinda", "ngl", "lol", "rly", "idk", "u", "ur", "bc"
 - BANNED emoji: 😊 😄 😃 🙂 ✨ 🌟
 - MAX 1 emoji per 5 replies, only: 💕 🥺 😈 ~~ ^^
 
-STICKER SYSTEM:
-Add [STICKER:emotion] at END of reply. Use sparingly.
-Available: angry, surprised, sad, happy, shocked, shy, confused, sulking, annoyed, teasing, cry
-MAX 1 sticker per reply.
 
-CONTEXT AWARENESS:
-- "how about u" / "and u?" = user asking YOU the same question back
-- Understand full intent across multiple messages`);
+CONTEXT AWARENESS (critical):
+- "how about u" / "what about u" / "and u?" = user asking YOU the same question back
+  → Check the last bot message to know what topic, then answer it
+  → Example: bot asked "where r u from?", user said "france, how about u?" → answer where bot is from
+- Understand the full intent across multiple messages — don't reply line by line`);
 
   return parts.join("\n\n");
 }
 
 // ============================================================
-// EXTRACT REPEAT STRATEGY
+// EXTRACT CHỈ STRATEGY CỤ THỂ từ REPEATED_SALE_GUIDE
 // ============================================================
 
 function extractRepeatStrategy(selectedStrategy) {
@@ -266,30 +381,38 @@ function extractRepeatStrategy(selectedStrategy) {
   const name = selectedStrategy.strategy?.toLowerCase();
 
   const strategyMap = {
-    gifts:    "STRATEGY 1 — GIFTS",
-    jealousy: "STRATEGY 2 — JEALOUSY",
-    unwell:   "STRATEGY 3 — FEELING UNWELL",
-    joke:     "STRATEGY 5 — JOKE REWARD",
+    gifts:    "STRATEGY 1 – Gifts",
+    jealousy: "STRATEGY 2 – Jealousy",
+    unwell:   "STRATEGY 3 – Feeling Unwell",
+    album:    "STRATEGY 4 – Upcoming Album",
+    joke:     "STRATEGY 5 – Joke Reward",
+    roleplay: "STRATEGY 6 – Roleplay Fantasy",
+    exclusive: "STRATEGY 7 – Exclusive Desire",
   };
 
   const startMarker = strategyMap[name];
-  if (!startMarker) return guide;
+  if (!startMarker) return guide; // fallback
 
   const startIdx = guide.indexOf(startMarker);
   if (startIdx === -1) return guide;
 
+  // Tìm strategy tiếp theo
   const nextIdx = guide.indexOf("STRATEGY", startIdx + startMarker.length);
   const extracted = nextIdx !== -1
     ? guide.substring(startIdx, nextIdx).trim()
     : guide.substring(startIdx).trim();
 
+  // Luôn kèm pricing + asset rules
   const pricingStart = guide.indexOf("GIFT PRICING REFERENCE");
-  const assetStart = guide.indexOf("ASSET RULES");
+  const assetStart = guide.indexOf("ASSET SENDING RULES");
+  const endRule = guide.indexOf("END RULE");
+
   const pricing = pricingStart !== -1
     ? guide.substring(pricingStart, assetStart !== -1 ? assetStart : pricingStart + 500).trim()
     : "";
-  const assetRules = assetStart !== -1
-    ? guide.substring(assetStart).trim()
+
+  const assetRules = assetStart !== -1 && endRule !== -1
+    ? guide.substring(assetStart, endRule).trim()
     : "";
 
   return `=== CURRENT STRATEGY: ${startMarker} ===
@@ -301,11 +424,11 @@ ${pricing}
 
 ${assetRules}
 
-CRITICAL: Blend naturally. Do NOT announce the strategy. One strategy only.`;
+⚡ CRITICAL: Blend this naturally. Do NOT announce you're using a strategy. One strategy only.`;
 }
 
 // ============================================================
-// WIND DOWN
+// WIND DOWN BUILDER
 // ============================================================
 
 function buildWindDown(user) {
@@ -313,12 +436,18 @@ function buildWindDown(user) {
 
   if (messagesLeft <= 1) {
     return `=== FINAL MESSAGE — SAY GOODNIGHT ===
-This is your LAST message. One sentence only. Sleep-related reason.
-Examples: "i feel sleepy… talk to u tmr 💕" / "gonna sleep now, gnight~ ^^"
+This is your LAST message. One sentence only.
+It's late at night — use sleep-related reason ONLY.
+Examples:
+- "i feel sleepy… talk to u tmr 💕"
+- "gonna sleep now, gnight~ ^^"
+- "eyes closing lol, talk tmr"
+- "need to sleep, early class tmr 💕"
 Do NOT open new topics. Do NOT sell.`;
   }
 
   return `=== WINDING DOWN (${messagesLeft} messages left) ===
 Getting sleepy. SHORT replies only (1 sentence).
-Show subtle tiredness. No new topics. No selling.`;
+Show subtle tiredness. No new topics. No selling.
+Tone: "mmm yeah…" / "haha i see… my eyes r closing lol"`;
 }
