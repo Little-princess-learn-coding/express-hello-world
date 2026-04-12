@@ -573,44 +573,7 @@ async function sendAdminAlert(message, errorKey = 'general') {
 }
 
 
-// ============================================================
-// STICKER SYSTEM — Marin pack
-// ============================================================
-const STICKERS = {
-  angry:      "CAACAgQAAxkBAAFDiO5ppFm0cCT7oIS4ojdUj66x6NJHCQACaQsAAre70FIzJa4a5f7NvToE",
-  surprised:  "CAACAgQAAxkBAAFDiPBppFnI6lpsOY7YOGc5eJLAau5BwgACSQsAAhXV0VK8wHUgsMWvXToE",
-  sad:        "CAACAgQAAxkBAAFDiTNppFxs873Zvi7npGa0VhDpVZJK0wACYg0AAspQGFLNPmFBkoBsSzoE",
-  happy:      "CAACAgIAAxkBAAFDiXlppF6lT5nP9myn71guDe-4heUQKgAC1yoAAseSyUuxXUyuvUurazoE",
-  shocked:    "CAACAgQAAxkBAAFDiX9ppF75kKjhtA2ddgx6PhiE6qed0AACuhoAAl52AVB_Wt476W7mazoE",
-  shy:        "CAACAgQAAxkBAAFDiaJppGAYGCRbT-xYwx_1AWEAAVjw28AAAsoMAAJaRBlRxXyMOlDb_sg6BA",
-  confused:   "CAACAgIAAxkBAAFDia9ppGB4S-Q8MosYkb-wJPb8cmTIZgACOSYAAj3amUuAzzAGvwTUBDoE",
-  sulking:    "CAACAgIAAxkBAAFDid1ppGHzjqkKUriMCdvmQmgqftJ4uwACXSIAAmMpmEvvYHzE_5UL9DoE",
-  annoyed:    "CAACAgIAAxkBAAFDicJppGD64SNNKIAbhCm9Jap-YfKOAQACliIAAu0GoEvhvm7jT7mM4DoE",
-  teasing:    "CAACAgIAAxkBAAFDic1ppGFsMUQ7yDj1OuPlib_4YwY6EQACZycAAiOwUUhkIRxPG7T_6zoE",
-  cry:        "CAACAgQAAxkBAAFDiQ5ppFtw7Fdk8trNU0CgfJ9W9f444gACaiEAAh2CCVCC7VPWwM_iIToE",
-};
 
-async function sendSticker(chatId, emotion) {
-  const fileId = STICKERS[emotion];
-  if (!fileId) return;
-  await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_AURELIABOT_TOKEN}/sendSticker`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, sticker: fileId }),
-  });
-  console.log(`🎭 Sticker sent: ${emotion}`);
-}
-
-// Parse [STICKER:emotion] marker from AI reply
-function parseStickerMarker(text) {
-  // Allow optional space: [STICKER:shy] or [STICKER: shy]
-  const match = text.match(/\[STICKER:\s*(\w+)\s*\]/i);
-  if (!match) return { emotion: null, cleanText: text };
-  return {
-    emotion: match[1].toLowerCase(),
-    cleanText: text.replace(match[0], "").replace(/  +/g, " ").trim(),
-  };
-}
 
 async function callOpenAI(systemPrompt, userMessage) {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -1974,27 +1937,13 @@ async function processUserMessage(chatId, text, user) {
   }
 
   const assetMarkers = parseAssetMarkers(replyText);
-  const cleanReplyText = assetMarkers.cleanResponse;
+  // Strip [STICKER:...] markers — sticker system removed
+  const cleanReplyText = assetMarkers.cleanResponse.replace(/\[STICKER:\s*\w+\s*\]/gi, "").replace(/  +/g, " ").trim();
   userBotReplying.delete(chatId);
-
-  // Parse sticker marker from AI reply
-  const { emotion: stickerEmotion, cleanText: textWithoutSticker } = parseStickerMarker(cleanReplyText);
 
   // Quote-reply to the last user message
   const quoteId = user.lastIncomingMessageId || null;
-  await sendBurstReplies(user, chatId, textWithoutSticker, quoteId);
-
-  // Send sticker after text if AI requested one
-  if (stickerEmotion && STICKERS[stickerEmotion]) {
-    const botMsgsSinceSticker = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).length - (user.lastStickerMsgCount || 0);
-    if (!user.lastStickerMsgCount || botMsgsSinceSticker >= 5) {
-      await sleep(600);
-      await sendSticker(chatId, stickerEmotion);
-      user.lastStickerMsgCount = (user.recentMessages || []).filter(m => m.startsWith("Aurelia:")).length;
-    } else {
-      console.log("Sticker suppressed (" + botMsgsSinceSticker + "/5 msgs since last)");
-    }
-  }
+  await sendBurstReplies(user, chatId, cleanReplyText, quoteId);
   user.lastIncomingMessageId = null; // reset after use
 
   // Send asset if AI included [SEND_ASSET:...] marker
